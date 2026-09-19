@@ -19,10 +19,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/joho/godotenv"
-	maxbot "github.com/max-messenger/max-bot-api-client-go"
-
 	"max_bot_api/pkg/bot"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -33,7 +32,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	api, err := maxbot.New(os.Getenv("MAX_BOT_TOKEN"))
+	api, err := bot.NewAPIClient(os.Getenv("MAX_BOT_TOKEN"))
 	if err != nil {
 		log.Fatalf("Ошибка инициализации: %v", err)
 	}

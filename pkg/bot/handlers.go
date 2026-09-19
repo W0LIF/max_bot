@@ -32,7 +32,7 @@ func HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api, err := maxbot.New(token)
+	api, err := NewAPIClient(token)
 	if err != nil {
 		log.Printf("Ошибка инициализации бота: %v", err)
 		http.Error(w, "Internal error", http.StatusInternalServerError)
