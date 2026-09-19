@@ -1,61 +1,24 @@
+// api/webhook.go — POST /api/webhook
+//
+// Требования сборщика Vercel (@vercel/go) к файлу внутри api/:
+//  1. НЕ `package main`, если в проекте есть go.mod — иначе билд падает с
+//     "Please change `package main` to `package handler`".
+//  2. Экспортируемая функция с сигнатурой (http.ResponseWriter, *http.Request) —
+//     сборщик сам найдёт её через AST и обернёт в http.HandlerFunc.
+//
+// Имена функций в пределах api/ должны различаться: все файлы в этой папке
+// входят в один Go-пакет, иначе будет "redeclared in this block".
+//
+// Логика — в pkg/bot.
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
-	"os"
 
-	maxbot "github.com/max-messenger/max-bot-api-client-go"
-	"github.com/max-messenger/max-bot-api-client-go/schemes"
+	"max_bot_api/pkg/bot"
 )
 
-func Handler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Инициализируем клиента MAX (токен из переменной окружения)
-	api, err := maxbot.New(os.Getenv("MAX_BOT_TOKEN"))
-	if err != nil {
-		log.Printf("Ошибка инициализации бота: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	var update schemes.UpdateInterface
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		log.Printf("Ошибка декодирования: %v", err)
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
-
-	// Обрабатываем только новые сообщения
-	if msgUpdate, ok := update.(*schemes.MessageCreatedUpdate); ok {
-		text := msgUpdate.Message.Body.Text
-		chatID := msgUpdate.Message.Recipient.ChatId
-
-		ctx := r.Context()
-
-		if text == "/start" {
-			msg := maxbot.NewMessage().
-				SetChat(chatID).
-				SetText("Привет! Я бот для учёбы. Открой мини-приложение, чтобы начать.")
-			if err := api.Messages.Send(ctx, msg); err != nil {
-				log.Printf("Ошибка отправки: %v", err)
-			}
-		} else {
-			msg := maxbot.NewMessage().
-				SetChat(chatID).
-				SetText(fmt.Sprintf("Вы написали: %s", text))
-			if err := api.Messages.Send(ctx, msg); err != nil {
-				log.Printf("Ошибка отправки: %v", err)
-			}
-		}
-	}
-
-	// MAX требует, чтобы вебхук возвращал 200 OK
-	w.WriteHeader(http.StatusOK)
+// Webhook — вебхук MAX.
+func Webhook(w http.ResponseWriter, r *http.Request) {
+	bot.HandleWebhook(w, r)
 }
