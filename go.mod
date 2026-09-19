@@ -1,4 +1,4 @@
-module max_bot
+module max_bot_api
 
 go 1.22
 
