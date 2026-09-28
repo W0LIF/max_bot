@@ -237,4 +237,124 @@ func runStoreTests(t *testing.T, s Store) {
 			t.Fatalf("изменение копии повлияло на хранилище")
 		}
 	})
+
+	// --- Напоминания ---
+
+	t.Run("GetTasksDueBefore_OnlyCloseDeadline", func(t *testing.T) {
+		now := time.Now()
+
+		_, _ = s.CreateTask(ctx, &Task{
+			UserID:   90,
+			Title:    "скоро",
+			Deadline: now.Add(1 * time.Hour),
+			Status:   TaskNew,
+		})
+		_, _ = s.CreateTask(ctx, &Task{
+			UserID:   90,
+			Title:    "не скоро",
+			Deadline: now.Add(100 * time.Hour),
+			Status:   TaskNew,
+		})
+
+		tasks, err := s.GetTasksDueBefore(ctx, now.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("GetTasksDueBefore вернул ошибку: %v", err)
+		}
+
+		var found bool
+		for _, task := range tasks {
+			if task.UserID == 90 && task.Title == "скоро" {
+				found = true
+			}
+			if task.UserID == 90 && task.Title == "не скоро" {
+				t.Fatalf("вернулась задача с далёким дедлайном")
+			}
+		}
+		if !found {
+			t.Fatalf("не вернулась задача с близким дедлайном")
+		}
+	})
+
+	t.Run("GetTasksDueBefore_SkipsDone", func(t *testing.T) {
+		now := time.Now()
+
+		_, _ = s.CreateTask(ctx, &Task{
+			UserID:   91,
+			Title:    "выполнена",
+			Deadline: now.Add(1 * time.Hour),
+			Status:   TaskDone,
+		})
+
+		tasks, err := s.GetTasksDueBefore(ctx, now.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("GetTasksDueBefore вернул ошибку: %v", err)
+		}
+		for _, task := range tasks {
+			if task.UserID == 91 && task.Title == "выполнена" {
+				t.Fatalf("вернулась выполненная задача")
+			}
+		}
+	})
+
+	t.Run("GetTasksDueBefore_SkipsReminded", func(t *testing.T) {
+		now := time.Now()
+
+		id, _ := s.CreateTask(ctx, &Task{
+			UserID:   92,
+			Title:    "уже напомнили",
+			Deadline: now.Add(1 * time.Hour),
+			Status:   TaskNew,
+		})
+		if err := s.SetTaskReminderSent(ctx, id); err != nil {
+			t.Fatalf("SetTaskReminderSent вернул ошибку: %v", err)
+		}
+
+		tasks, err := s.GetTasksDueBefore(ctx, now.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("GetTasksDueBefore вернул ошибку: %v", err)
+		}
+		for _, task := range tasks {
+			if task.UserID == 92 {
+				t.Fatalf("вернулась задача, по которой уже напомнили")
+			}
+		}
+	})
+
+	t.Run("GetTasksDueBefore_SkipsZeroDeadline", func(t *testing.T) {
+		now := time.Now()
+
+		_, _ = s.CreateTask(ctx, &Task{
+			UserID: 93,
+			Title:  "без дедлайна",
+			Status: TaskNew,
+		})
+
+		tasks, err := s.GetTasksDueBefore(ctx, now.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("GetTasksDueBefore вернул ошибку: %v", err)
+		}
+		for _, task := range tasks {
+			if task.UserID == 93 {
+				t.Fatalf("вернулась задача без дедлайна")
+			}
+		}
+	})
+
+	t.Run("SetTaskReminderSent", func(t *testing.T) {
+		id, _ := s.CreateTask(ctx, &Task{
+			UserID:   94,
+			Title:    "напомнить",
+			Deadline: time.Now().Add(1 * time.Hour),
+			Status:   TaskNew,
+		})
+
+		if err := s.SetTaskReminderSent(ctx, id); err != nil {
+			t.Fatalf("SetTaskReminderSent вернул ошибку: %v", err)
+		}
+
+		got, _ := s.GetTask(ctx, 94, id)
+		if !got.ReminderSent {
+			t.Fatalf("ReminderSent не стал true")
+		}
+	})
 }

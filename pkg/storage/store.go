@@ -1,6 +1,9 @@
 package storage
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Store interface {
 	SaveUser(ctx context.Context, u *User) error
@@ -14,4 +17,6 @@ type Store interface {
 	UpdateTask(ctx context.Context, t *Task) error
 	DeleteTask(ctx context.Context, userID, taskID int64) error
 	SetTaskStatus(ctx context.Context, userID, taskID int64, status TaskStatus) error
+	GetTasksDueBefore(ctx context.Context, before time.Time) ([]Task, error)
+	SetTaskReminderSent(ctx context.Context, taskID int64) error
 }

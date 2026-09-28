@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 )
 
 type MemoryStore struct {
@@ -145,6 +146,41 @@ func (s *MemoryStore) SetTaskStatus(_ context.Context, userID, taskID int64, sta
 		return err
 	}
 	t.Status = status
+	return nil
+}
+
+func (s *MemoryStore) GetTasksDueBefore(_ context.Context, before time.Time) ([]Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var result []Task
+	for _, t := range s.tasks {
+		if t.Status == TaskDone {
+			continue
+		}
+		if t.ReminderSent {
+			continue
+		}
+		if t.Deadline.IsZero() {
+			continue
+		}
+		if t.Deadline.Before(before) {
+			result = append(result, *t)
+		}
+	}
+	sortTasks(result)
+	return result, nil
+}
+
+func (s *MemoryStore) SetTaskReminderSent(_ context.Context, taskID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return ErrTaskNotFound
+	}
+	t.ReminderSent = true
 	return nil
 }
 
