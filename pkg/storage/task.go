@@ -23,13 +23,14 @@ func (s TaskStatus) IsValid() bool {
 }
 
 type Task struct {
-	ID        int64      `json:"id"`
-	UserID    int64      `json:"user_id"`
-	Title     string     `json:"title"`
-	Deadline  time.Time  `json:"deadline"`
-	Urgent    bool       `json:"urgent"`
-	Important bool       `json:"important"`
-	Status    TaskStatus `json:"status"`
+	ID           int64      `json:"id"`
+	UserID       int64      `json:"user_id"`
+	Title        string     `json:"title"`
+	Deadline     time.Time  `json:"deadline"`
+	Urgent       bool       `json:"urgent"`
+	Important    bool       `json:"important"`
+	Status       TaskStatus `json:"status"`
+	ReminderSent bool
 }
 
 var (

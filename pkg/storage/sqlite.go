@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -42,16 +43,18 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id    INTEGER NOT NULL,
-	title      TEXT NOT NULL,
-	deadline   TIMESTAMP,
-	urgent     INTEGER NOT NULL DEFAULT 0,
-	important  INTEGER NOT NULL DEFAULT 0,
-	status     TEXT NOT NULL DEFAULT 'new'
+	id            INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id       INTEGER NOT NULL,
+	title         TEXT NOT NULL,
+	deadline      TIMESTAMP,
+	urgent        INTEGER NOT NULL DEFAULT 0,
+	important     INTEGER NOT NULL DEFAULT 0,
+	status        TEXT NOT NULL DEFAULT 'new',
+	reminder_sent INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
 `
 
 	_, err := s.db.Exec(schema)
@@ -143,8 +146,8 @@ func (s *SQLiteStore) CreateTask(_ context.Context, t *Task) (int64, error) {
 	defer s.mu.Unlock()
 
 	res, err := s.db.Exec(`
-		INSERT INTO tasks (user_id, title, deadline, urgent, important, status)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (user_id, title, deadline, urgent, important, status, reminder_sent)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`,
 		t.UserID,
 		t.Title,
@@ -152,6 +155,7 @@ func (s *SQLiteStore) CreateTask(_ context.Context, t *Task) (int64, error) {
 		boolToInt(t.Urgent),
 		boolToInt(t.Important),
 		string(t.Status),
+		boolToInt(t.ReminderSent),
 	)
 	if err != nil {
 		return 0, err
@@ -169,7 +173,7 @@ func (s *SQLiteStore) GetTasks(_ context.Context, userID int64) ([]Task, error) 
 	defer s.mu.Unlock()
 
 	rows, err := s.db.Query(`
-		SELECT id, user_id, title, deadline, urgent, important, status
+		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
 		FROM tasks WHERE user_id = ?
 	`, userID)
 	if err != nil {
@@ -198,12 +202,13 @@ func (s *SQLiteStore) UpdateTask(_ context.Context, t *Task) error {
 
 	res, err := s.db.Exec(`
 		UPDATE tasks SET
-			user_id   = ?,
-			title     = ?,
-			deadline  = ?,
-			urgent    = ?,
-			important = ?,
-			status    = ?
+			user_id       = ?,
+			title         = ?,
+			deadline      = ?,
+			urgent        = ?,
+			important     = ?,
+			status        = ?,
+			reminder_sent = ?
 		WHERE id = ?
 	`,
 		t.UserID,
@@ -212,6 +217,7 @@ func (s *SQLiteStore) UpdateTask(_ context.Context, t *Task) error {
 		boolToInt(t.Urgent),
 		boolToInt(t.Important),
 		string(t.Status),
+		boolToInt(t.ReminderSent),
 		t.ID,
 	)
 	if err != nil {
@@ -253,11 +259,51 @@ func (s *SQLiteStore) SetTaskStatus(_ context.Context, userID, taskID int64, sta
 	return err
 }
 
+func (s *SQLiteStore) GetTasksDueBefore(_ context.Context, before time.Time) ([]Task, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows, err := s.db.Query(`
+		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
+		FROM tasks
+		WHERE deadline IS NOT NULL
+		  AND deadline > '1900-01-01'
+		  AND deadline < ?
+		  AND status != ?
+		  AND reminder_sent = 0
+	`, before, string(TaskDone))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks, err := scanTasks(rows)
+	if err != nil {
+		return nil, err
+	}
+	sortTasks(tasks)
+	return tasks, nil
+}
+
+func (s *SQLiteStore) SetTaskReminderSent(_ context.Context, taskID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res, err := s.db.Exec(
+		`UPDATE tasks SET reminder_sent = 1 WHERE id = ?`,
+		taskID,
+	)
+	if err != nil {
+		return err
+	}
+	return checkRowsAffected(res, ErrTaskNotFound)
+}
+
 // --- Вспомогательные ---
 
 func (s *SQLiteStore) getTaskLocked(userID, taskID int64) (*Task, error) {
 	row := s.db.QueryRow(`
-		SELECT id, user_id, title, deadline, urgent, important, status
+		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
 		FROM tasks WHERE id = ? AND user_id = ?
 	`, taskID, userID)
 
@@ -273,15 +319,16 @@ func (s *SQLiteStore) getTaskLocked(userID, taskID int64) (*Task, error) {
 
 func scanTask(row *sql.Row) (*Task, error) {
 	var (
-		t         Task
-		urgent    int
-		important int
-		status    string
+		t            Task
+		urgent       int
+		important    int
+		status       string
+		reminderSent int
 	)
 
 	err := row.Scan(
 		&t.ID, &t.UserID, &t.Title, &t.Deadline,
-		&urgent, &important, &status,
+		&urgent, &important, &status, &reminderSent,
 	)
 	if err != nil {
 		return nil, err
@@ -290,6 +337,7 @@ func scanTask(row *sql.Row) (*Task, error) {
 	t.Urgent = urgent != 0
 	t.Important = important != 0
 	t.Status = TaskStatus(status)
+	t.ReminderSent = reminderSent != 0
 	return &t, nil
 }
 
@@ -298,15 +346,16 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 
 	for rows.Next() {
 		var (
-			t         Task
-			urgent    int
-			important int
-			status    string
+			t            Task
+			urgent       int
+			important    int
+			status       string
+			reminderSent int
 		)
 
 		err := rows.Scan(
 			&t.ID, &t.UserID, &t.Title, &t.Deadline,
-			&urgent, &important, &status,
+			&urgent, &important, &status, &reminderSent,
 		)
 		if err != nil {
 			return nil, err
@@ -315,6 +364,7 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 		t.Urgent = urgent != 0
 		t.Important = important != 0
 		t.Status = TaskStatus(status)
+		t.ReminderSent = reminderSent != 0
 		result = append(result, t)
 	}
 
