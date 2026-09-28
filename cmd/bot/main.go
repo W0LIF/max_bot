@@ -1,14 +1,3 @@
-// cmd/bot — локальный запуск бота на long-polling (GetUpdates).
-//
-// Это обычный демон с бесконечным циклом, он НЕ может жить в api/:
-// Vercel считает любой .go-файл там serverless-функцией и требует
-// func Handler вместо func main.
-//
-// Запуск локально:
-//
-//	go run ./cmd/bot
-//
-// Для Vercel используется вебхук /api/webhook — см. api/webhook.go.
 package main
 
 import (
@@ -20,6 +9,7 @@ import (
 	"syscall"
 
 	"max_bot_api/pkg/bot"
+	"max_bot_api/pkg/storage"
 
 	"github.com/joho/godotenv"
 )
@@ -49,7 +39,10 @@ func main() {
 		}
 	}()
 
+	store := storage.NewMemoryStore()
+	b := bot.New(api, store)
+
 	for update := range api.GetUpdates(ctx) {
-		bot.Dispatch(ctx, api, update)
+		b.Dispatch(ctx, update)
 	}
 }
