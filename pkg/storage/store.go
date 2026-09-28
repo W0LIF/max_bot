@@ -1,23 +1,17 @@
 package storage
 
+import "context"
+
 type Store interface {
-	SaveUser(u *User) error
+	SaveUser(ctx context.Context, u *User) error
+	GetUser(ctx context.Context, id int64) (*User, error)
+	SetConsent(ctx context.Context, id int64, consent bool) error
+	SetReminders(ctx context.Context, id int64, on bool) error
 
-	GetUser(id int64) (*User, error)
-
-	SetConsent(id int64) (*User, error)
-
-	SetReminders(id int64, on bool) error
-
-	CreateTask(t *Task) (int64, error)
-
-	GetTasks(userID int64) ([]Task, error)
-
-	GetTask(id int64) (*Task, error)
-
-	UpdateTask(t *Task) error
-
-	DeleteTask(id int64) error
-
-	SetTaskStatus(id int64, status TaskStatus) error
+	CreateTask(ctx context.Context, t *Task) (int64, error)
+	GetTasks(ctx context.Context, userID int64) ([]Task, error)
+	GetTask(ctx context.Context, userID, taskID int64) (*Task, error)
+	UpdateTask(ctx context.Context, t *Task) error
+	DeleteTask(ctx context.Context, userID, taskID int64) error
+	SetTaskStatus(ctx context.Context, userID, taskID int64, status TaskStatus) error
 }
