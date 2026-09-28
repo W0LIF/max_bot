@@ -13,10 +13,11 @@ import (
 func cbBtn(text, payload string) schemes.CallbackButton {
 	return schemes.CallbackButton{
 		Button: schemes.Button{
-			Type: schemes.ButtonType("callback"),
+			Type: schemes.CALLBACK,
 			Text: text,
 		},
 		Payload: payload,
+		Intent:  schemes.DEFAULT,
 	}
 }
 

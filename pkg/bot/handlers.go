@@ -23,13 +23,16 @@ import (
 
 // Dispatch — общая точка входа для long-polling и webhook.
 func (b *Bot) Dispatch(ctx context.Context, update schemes.UpdateInterface) {
+	log.Printf("DEBUG dispatch: %T", update)
+
 	switch u := update.(type) {
 	case *schemes.MessageCreatedUpdate:
 		b.onMessage(ctx, u)
 	case *schemes.MessageCallbackUpdate:
+		log.Printf("DEBUG callback payload=%q", u.Callback.Payload)
 		b.onCallback(ctx, u)
 	default:
-		// прочие апдейты (bot_started, удаления и т.п.) пока игнорируем
+		log.Printf("DEBUG unknown update: %+v", update)
 	}
 }
 
@@ -93,6 +96,18 @@ func (b *Bot) fallback(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
 // --- Обработка нажатий на кнопки ---
 
 func (b *Bot) onCallback(ctx context.Context, upd *schemes.MessageCallbackUpdate) {
+
+	_, err := b.api.Messages.AnswerOnCallback(
+		ctx,
+		upd.Callback.CallbackID, // ID колбэка из апдейта
+		&schemes.CallbackAnswer{
+			Notification: "Принято", // Показываем всплывающее уведомление
+		},
+	)
+	if err != nil {
+		log.Printf("AnswerOnCallback error: %v", err)
+	}
+
 	userID := upd.Callback.User.UserId
 	payload := upd.Callback.Payload
 
