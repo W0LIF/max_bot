@@ -76,7 +76,10 @@ func main() {
 		}
 	}()
 
+	// --- Бот ---
+	b := bot.New(api, store)
+
 	for update := range api.GetUpdates(ctx) {
-		bot.Dispatch(ctx, api, update)
+		b.Dispatch(ctx, update)
 	}
 }

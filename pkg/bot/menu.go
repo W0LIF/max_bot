@@ -3,15 +3,11 @@ package bot
 import (
 	"strconv"
 
+	maxbot "github.com/max-messenger/max-bot-api-client-go"
 	"github.com/max-messenger/max-bot-api-client-go/schemes"
-)
 
-// Все клавиатуры бота собраны здесь.
-//
-// API библиотеки (проверено через go doc):
-//   - schemes.Keyboard{ Buttons [][]ButtonInterface }
-//   - schemes.CallbackButton{ Button{Type, Text}, Payload string }
-//   - тип кнопки — schemes.ButtonType (строка)
+	"max_bot_api/pkg/storage"
+)
 
 // cbBtn — короткий хелпер: callback-кнопка.
 func cbBtn(text, payload string) schemes.CallbackButton {
@@ -24,15 +20,11 @@ func cbBtn(text, payload string) schemes.CallbackButton {
 	}
 }
 
-// kbFromRows собирает Keyboard из рядов кнопок.
-// Каждый ряд — срез ButtonInterface, поэтому CallbackButton
-// автоматически приводится к интерфейсу.
-func kbFromRows(rows ...[]schemes.ButtonInterface) *schemes.Keyboard {
-	return &schemes.Keyboard{Buttons: rows}
+func kbFromRows(rows ...[]schemes.ButtonInterface) *maxbot.Keyboard {
+	return maxbot.InlineKeyboard(rows...)
 }
 
-// kbConsent — согласие на обработку данных.
-func kbConsent() *schemes.Keyboard {
+func kbConsent() *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("Да ✅", CbConsentYes),
@@ -41,8 +33,7 @@ func kbConsent() *schemes.Keyboard {
 	)
 }
 
-// kbReminders — вопрос о напоминаниях.
-func kbReminders() *schemes.Keyboard {
+func kbReminders() *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("Да", CbRemindYes),
@@ -51,8 +42,7 @@ func kbReminders() *schemes.Keyboard {
 	)
 }
 
-// kbMainMenu — главное меню.
-func kbMainMenu() *schemes.Keyboard {
+func kbMainMenu() *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("➕ Добавить задачу", CbMenuAdd),
@@ -68,8 +58,7 @@ func kbMainMenu() *schemes.Keyboard {
 	)
 }
 
-// kbMood — трекинг настроения после выполнения задачи.
-func kbMood() *schemes.Keyboard {
+func kbMood() *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("😊", CbMoodGood),
@@ -80,8 +69,7 @@ func kbMood() *schemes.Keyboard {
 }
 
 // kbTaskSelect — список задач для выбора.
-// action: "done" | "edit" | "delete" → payload "task:<action>:<id>".
-func kbTaskSelect(tasks []Task, action string) *schemes.Keyboard {
+func kbTaskSelect(tasks []storage.Task, action string) *maxbot.Keyboard {
 	rows := make([][]schemes.ButtonInterface, 0, len(tasks)+1)
 	for i, t := range tasks {
 		title := t.Title
@@ -98,8 +86,7 @@ func kbTaskSelect(tasks []Task, action string) *schemes.Keyboard {
 	return kbFromRows(rows...)
 }
 
-// kbDeleteConfirm — подтверждение удаления задачи.
-func kbDeleteConfirm(taskID int64) *schemes.Keyboard {
+func kbDeleteConfirm(taskID int64) *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("🗑 Да, удалить", cbTaskDelConfirm(taskID)),
@@ -108,8 +95,7 @@ func kbDeleteConfirm(taskID int64) *schemes.Keyboard {
 	)
 }
 
-// kbPriority — приоритет по Эйзенхауэру.
-func kbPriority() *schemes.Keyboard {
+func kbPriority() *maxbot.Keyboard {
 	return kbFromRows(
 		[]schemes.ButtonInterface{
 			cbBtn("🔥 Важно и срочно", "priority:1"),
@@ -118,6 +104,19 @@ func kbPriority() *schemes.Keyboard {
 		[]schemes.ButtonInterface{
 			cbBtn("⏰ Срочно", "priority:3"),
 			cbBtn("🌿 Обычное", "priority:4"),
+		},
+	)
+}
+
+func kbEditField() *maxbot.Keyboard {
+	return kbFromRows(
+		[]schemes.ButtonInterface{
+			cbBtn("📝 Название", "edit:title"),
+			cbBtn("📅 Дедлайн", "edit:deadline"),
+		},
+		[]schemes.ButtonInterface{
+			cbBtn("🎯 Приоритет", "edit:priority"),
+			cbBtn("⬅️ Отмена", CbMenuList),
 		},
 	)
 }
