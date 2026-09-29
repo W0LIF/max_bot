@@ -19,14 +19,14 @@ export function GroupScreen() {
     <div className="screen">
       <div className="screen__hero">
         <h1 className="h1">Общие задачи</h1>
-        <span className="caption">Участники вашей учебной группы</span>
+        <span className="caption">Выберите участников</span>
       </div>
 
       <span className="input-wrap input-wrap--left">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Поиск по группе ${state.groupMembers[0]?.group ?? ''}`}
+          placeholder="Поиск по имени"
         />
         <span className="input-wrap__icon">
           <Icon name="search" size={18} />
@@ -46,7 +46,7 @@ export function GroupScreen() {
                 />
                 <span className="stack grow">
                   <span className="h3">{member.name}</span>
-                  <span className="caption">Группа {member.group}</span>
+                  <span className="caption">{member.tasks} задач</span>
                 </span>
                 <span className={`check__box check__box--round${checked ? ' check__box--on' : ''}`}>
                   {checked && <Icon name="check" size={14} strokeWidth={2.6} />}
@@ -54,7 +54,7 @@ export function GroupScreen() {
               </button>
             )
           })}
-          {members.length === 0 && <p className="caption">В группе пока нет участников.</p>}
+          {members.length === 0 && <p className="caption">Участники не найдены.</p>}
         </div>
       </Card>
 
@@ -102,8 +102,8 @@ export function GroupTasksScreen() {
   return (
     <div className="screen screen--padded">
       <div className="screen__hero">
-        <h1 className="h1">Группа</h1>
-        <span className="caption">Общие задачи · {state.groupMembers[0]?.group ?? 'группа'}</span>
+        <h1 className="h1">Общие задачи</h1>
+        <span className="caption">Задачи выбранных участников</span>
       </div>
 
       <div className="chip-row">
@@ -159,7 +159,7 @@ export function GroupTasksScreen() {
       <Card tone="flat">
         <div className="row-between">
           <span className="stack">
-            <span className="h3">Средний статус группы</span>
+            <span className="h3">Общий прогресс</span>
             <span className="caption">
               {done.length} из {dayTasks.length} · {STATUS_META.in_progress.label}
             </span>
@@ -168,7 +168,7 @@ export function GroupTasksScreen() {
         </div>
       </Card>
 
-      <button type="button" className="fab" onClick={() => push('add-task')} aria-label="Добавить задача в группу">
+      <button type="button" className="fab" onClick={() => push('add-task')} aria-label="Добавить общую задачу">
         <Icon name="plus" size={24} strokeWidth={2.2} />
       </button>
     </div>

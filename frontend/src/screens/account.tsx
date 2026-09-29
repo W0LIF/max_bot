@@ -23,7 +23,7 @@ export function MenuScreen() {
           <span className="stack grow">
             <span className="h2">{user.name}</span>
             <span className="caption">
-              {[user.course, user.group].filter(Boolean).join(' · ')}
+              {user.course}
             </span>
           </span>
           <Icon name="forward" size={18} className="row__chevron" />
@@ -38,7 +38,7 @@ export function MenuScreen() {
           icon="users"
           iconTone="lavender"
           title="Совместный режим"
-          subtitle={`${state.members.length} участников группы`}
+          subtitle={`${state.members.length} участников выбрано`}
           onClick={() => push('group')}
         />
         <Row
@@ -176,7 +176,7 @@ export function SettingsScreen() {
 
       <SectionTitle>Аккаунт</SectionTitle>
       <div className="list">
-        <Row icon="user" title={user.name} subtitle={[user.course, user.group].filter(Boolean).join(' · ')} />
+        <Row icon="user" title={user.name} subtitle={user.course} />
         <Row
           icon="bell"
           title="Уведомления"

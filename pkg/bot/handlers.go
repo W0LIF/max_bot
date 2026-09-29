@@ -43,6 +43,31 @@ func (b *Bot) Dispatch(ctx context.Context, update schemes.UpdateInterface) {
 func (b *Bot) onMessage(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
 	userID := upd.Message.Sender.UserId
 	text := strings.TrimSpace(upd.Message.Body.Text)
+	if text == "" {
+		if audioURL := audioAttachmentURL(upd.Message.Body.Attachments); audioURL != "" {
+			user, err := b.store.GetUser(ctx, userID)
+			if err != nil || !user.Consent {
+				b.reply(ctx, upd, "Для распознавания голоса нужно согласие на обработку данных. Подтверди его кнопкой:", kbConsent())
+				return
+			}
+			if b.speechKit == nil {
+				b.sendToUser(ctx, userID, "Распознавание голоса пока не настроено.", nil)
+				return
+			}
+
+			transcript, err := b.speechKit.TranscribeURL(ctx, audioURL)
+			if err != nil {
+				log.Printf("Yandex SpeechKit recognition error: %v", err)
+				b.sendToUser(ctx, userID, "Не получилось распознать голосовое сообщение. Попробуй ещё раз или отправь текст.", nil)
+				return
+			}
+			text = strings.TrimSpace(transcript)
+			if text == "" {
+				b.sendToUser(ctx, userID, "В голосовом сообщении не удалось распознать речь.", nil)
+				return
+			}
+		}
+	}
 	lowerText := strings.ToLower(text)
 
 	if text == "/start" || strings.EqualFold(text, "start") {
@@ -104,7 +129,7 @@ func (b *Bot) handleStart(ctx context.Context, upd *schemes.MessageCreatedUpdate
 			"• /start — начать работу с ботом\n"+
 			"• привет — поздороваться и увидеть картинку\n"+
 			"• меню — открыть главное меню\n\n"+
-			"Согласны на обработку данных?",
+			"Согласны на обработку данных? Голосовые сообщения будут передаваться в Yandex SpeechKit для распознавания.",
 		kbConsent())
 }
 

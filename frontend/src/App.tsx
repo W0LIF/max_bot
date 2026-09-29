@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from './ui/Icon'
 import { Button, Logo } from './ui/kit'
 import { NavProvider, TABS, useNav } from './nav'
@@ -17,17 +17,26 @@ const TITLES: Partial<Record<ScreenId, string>> = {
   note: 'Заметка',
   'mood-check': 'Отметка состояния',
   group: 'Совместный режим',
-  'group-tasks': 'Группа',
+  'group-tasks': 'Общие задачи',
   help: 'Помощь',
   feedback: 'Обратная связь',
   settings: 'Настройки',
 }
 
 function StatusBar() {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
   return (
     <div className="status-bar">
-      <span>9:41</span>
-      <span className="status-bar__icons">
+      <span>{time}</span>
+      <span className="status-bar__icons" aria-label="Сотовая связь, Wi-Fi и заряд батареи">
         <Icon name="signal" size={14} />
         <Icon name="wifi" size={15} />
         <Icon name="battery" size={20} />

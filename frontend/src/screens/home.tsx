@@ -342,7 +342,7 @@ export function ProfileLine() {
       <span className="stack">
         <span className="h2">{user.name}</span>
         <span className="caption">
-          {[user.course, user.group].filter(Boolean).join(' · ')}
+          {user.course}
         </span>
       </span>
     </div>
