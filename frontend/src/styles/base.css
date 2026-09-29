@@ -1,0 +1,265 @@
+/* ————————————————————————————————————————————————
+   Токены дизайн-системы «Телескоп» (по макету)
+   ———————————————————————————————————————————————— */
+:root {
+  color-scheme: light;
+
+  /* Основная палитра */
+  --navy: #0b1956;
+  --navy-soft: #1d2f7a;
+  --blue: #3f6bc4;
+  --blue-light: #6f9ae0;
+  --lavender: #c6c0ea;
+  --lavender-soft: #e4ddf7;
+  --cream: #f4e7cf;
+  --cream-soft: #fdf6e9;
+  --pink: #f4d9e2;
+  --pink-deep: #e9bccb;
+  --screen: #e9f3ff;
+  --screen-alt: #d8e8fb;
+  --board: #9a9ac2;
+  --paper: #ffffff;
+
+  /* Состояния задачи */
+  --st-done: #46c07c;
+  --st-progress: #f0d24c;
+  --st-frozen: #85dbee;
+  --st-overdue: #e4614f;
+  --st-late: #a5765c;
+
+  /* Текст и границы */
+  --text: #0b1956;
+  --muted: #5d688f;
+  --line: rgba(11, 25, 86, 0.1);
+  --line-strong: rgba(11, 25, 86, 0.22);
+
+  /* Радиусы */
+  --r-xl: 30px;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 11px;
+
+  /* Тени */
+  --shadow-card: 0 8px 24px rgba(11, 25, 86, 0.07);
+  --shadow-float: 0 18px 44px rgba(11, 25, 86, 0.22);
+
+  --font: 'Manrope', 'Onest', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-weight: 500;
+  color: var(--text);
+  background: var(--board);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100%;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+svg {
+  display: block;
+  flex: none;
+}
+
+/* ——— Типографика ——— */
+.h1 {
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.h2 {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.h3 {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.body {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.caption {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.overline {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.center {
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ——— Корпус телефона ——— */
+.stage {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+}
+
+.phone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 404px;
+  min-height: 100vh;
+  background: var(--screen);
+  overflow: hidden;
+}
+
+@media (min-width: 520px) {
+  .stage {
+    align-items: center;
+    padding: 26px 16px;
+  }
+
+  .phone {
+    height: min(880px, calc(100vh - 52px));
+    min-height: 600px;
+    border-radius: 40px;
+    box-shadow: var(--shadow-float);
+  }
+}
+
+/* Строка состояния */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.status-bar__icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Прокручиваемая область экрана */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 10px 20px 26px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.screen--padded {
+  padding-bottom: 104px;
+}
+
+.screen::-webkit-scrollbar {
+  width: 0;
+}
+
+.screen__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.screen__spacer {
+  flex: 1;
+}
+
+.screen__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.link-button {
+  align-self: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

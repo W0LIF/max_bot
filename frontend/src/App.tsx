@@ -1,69 +1,139 @@
-import { useEffect, useState } from 'react'
-import { Button, Panel, Typography, Container, Flex, Grid } from '@maxhub/max-ui'
+import { Icon } from './ui/Icon'
+import { NavProvider, TABS, useNav } from './nav'
+import type { ScreenId } from './nav'
+import { StoreProvider } from './store'
+import { AuthOkScreen, AuthScreen, PrivacyScreen } from './screens/onboarding'
+import { HomeScreen, MoodCheckScreen, MoodScreen, NoteScreen } from './screens/home'
+import { AddTaskScreen, CalendarScreen, ScanScreen, TasksScreen } from './screens/planner'
+import { GroupScreen, GroupTasksScreen, MapScreen } from './screens/social'
+import { FeedbackScreen, HelpScreen, MenuScreen, SettingsScreen } from './screens/account'
 
-interface MaxUser {
-  id: number
-  first_name?: string
-  last_name?: string
+/** Заголовок для вторичных экранов (вкладки показывают его внутри себя). */
+const TITLES: Partial<Record<ScreenId, string>> = {
+  'add-task': 'Добавить задачу',
+  scan: 'Добавить задачу',
+  note: 'Заметка',
+  'mood-check': 'Отметка состояния',
+  group: 'Совместный режим',
+  'group-tasks': 'Группа',
+  help: 'Помощь',
+  feedback: 'Обратная связь',
+  settings: 'Настройки',
 }
 
-function App() {
-  const [user, setUser] = useState<MaxUser | null>(null)
-  const [status, setStatus] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    const webApp = (window as any).WebApp
-    if (webApp?.initDataUnsafe?.user) {
-      setUser(webApp.initDataUnsafe.user)
-    } else {
-      setUser({ id: 0, first_name: 'Разработчик (браузер)' })
-    }
-  }, [])
-
-  const checkBackend = async () => {
-    setIsLoading(true)
-    setStatus('')
-    try {
-      const webApp = (window as any).WebApp
-      const initData = webApp?.initData || ''
-
-      const response = await fetch('/api/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ initData }),
-      })
-      const result = await response.json()
-      setStatus(result.message)
-    } catch {
-      setStatus('Ошибка соединения с сервером')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
+function StatusBar() {
   return (
-    <Panel mode="secondary" style={{ minHeight: '100vh', padding: 16 }}>
-      <Container>
-        <Flex direction="column" gap={16}>
-          <Typography.Title>StudyFlow</Typography.Title>
-          <Typography.Text>
-            Привет, {user?.first_name || 'гость'}!
-          </Typography.Text>
-          <Grid gap={12} cols={1}>
-            <Button onClick={checkBackend} loading={isLoading}>
-              Проверить связь с сервером
-            </Button>
-          </Grid>
-          {status && (
-            <Panel mode="primary" style={{ padding: 12 }}>
-              <Typography.Text>{status}</Typography.Text>
-            </Panel>
-          )}
-        </Flex>
-      </Container>
-    </Panel>
+    <div className="status-bar">
+      <span>9:41</span>
+      <span className="status-bar__icons">
+        <Icon name="signal" size={14} />
+        <Icon name="wifi" size={15} />
+        <Icon name="battery" size={20} />
+      </span>
+    </div>
   )
 }
 
-export default App
+function ScreenHeader() {
+  const { screen, isTab, canGoBack, back } = useNav()
+  if (isTab || !canGoBack) return null
+
+  return (
+    <div className="topbar">
+      <button type="button" className="icon-button" onClick={back} aria-label="Назад">
+        <Icon name="back" size={18} />
+      </button>
+      <span className="topbar__title">{TITLES[screen] ?? 'Телескоп'}</span>
+    </div>
+  )
+}
+
+function BottomNav() {
+  const { screen, openTab } = useNav()
+
+  return (
+    <nav className="bottom-nav">
+      {TABS.map((tab) => (
+        <button
+          type="button"
+          key={tab.id}
+          className={`tab${screen === tab.id ? ' tab--active' : ''}`}
+          onClick={() => openTab(tab.id)}
+        >
+          <Icon name={tab.icon} size={21} />
+          <span className="tab__label">{tab.label}</span>
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+function CurrentScreen() {
+  const { screen } = useNav()
+
+  switch (screen) {
+    case 'privacy':
+      return <PrivacyScreen />
+    case 'auth':
+      return <AuthScreen />
+    case 'auth-ok':
+      return <AuthOkScreen />
+    case 'home':
+      return <HomeScreen />
+    case 'tasks':
+      return <TasksScreen />
+    case 'calendar':
+      return <CalendarScreen />
+    case 'mood':
+      return <MoodScreen />
+    case 'mood-check':
+      return <MoodCheckScreen />
+    case 'map':
+      return <MapScreen />
+    case 'menu':
+      return <MenuScreen />
+    case 'add-task':
+      return <AddTaskScreen />
+    case 'scan':
+      return <ScanScreen />
+    case 'note':
+      return <NoteScreen />
+    case 'group':
+      return <GroupScreen />
+    case 'group-tasks':
+      return <GroupTasksScreen />
+    case 'help':
+      return <HelpScreen />
+    case 'feedback':
+      return <FeedbackScreen />
+    case 'settings':
+      return <SettingsScreen />
+    default:
+      return <HomeScreen />
+  }
+}
+
+export function Shell() {
+  const { isTab } = useNav()
+
+  return (
+    <div className="stage">
+      <div className="phone">
+        <StatusBar />
+        <ScreenHeader />
+        <CurrentScreen />
+        {isTab && <BottomNav />}
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <StoreProvider>
+      <NavProvider>
+        <Shell />
+      </NavProvider>
+    </StoreProvider>
+  )
+}
