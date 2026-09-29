@@ -22,21 +22,31 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// :memory: живёт в одном соединении — иначе таблицы из migrate()
+	// не увидят последующие запросы.
+	if path == ":memory:" {
+		db.SetMaxOpenConns(1)
+	}
+
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
 	s := &SQLiteStore{db: db}
 	if err := s.migrate(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
 }
 
+func (s *SQLiteStore) Close() error { return s.db.Close() }
+
 func (s *SQLiteStore) migrate() error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS users (
 	id           INTEGER PRIMARY KEY,
+	name         TEXT NOT NULL DEFAULT '',
 	consent      INTEGER NOT NULL DEFAULT 0,
 	reminders_on INTEGER NOT NULL DEFAULT 0,
 	onboarded_at TIMESTAMP
@@ -46,6 +56,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
 	user_id       INTEGER NOT NULL,
 	title         TEXT NOT NULL,
+	subject       TEXT NOT NULL DEFAULT '',
 	deadline      TIMESTAMP,
 	urgent        INTEGER NOT NULL DEFAULT 0,
 	important     INTEGER NOT NULL DEFAULT 0,
@@ -53,90 +64,94 @@ CREATE TABLE IF NOT EXISTS tasks (
 	reminder_sent INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS moods (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id    INTEGER NOT NULL,
+	value      TEXT NOT NULL,
+	note       TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	text    TEXT NOT NULL,
+	all_day INTEGER NOT NULL DEFAULT 0,
+	start   TIMESTAMP NOT NULL,
+	end     TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id    INTEGER NOT NULL,
+	text       TEXT NOT NULL,
+	created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+	id   INTEGER PRIMARY KEY,
+	name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+	user_id   INTEGER NOT NULL,
+	group_id  INTEGER NOT NULL,
+	joined_at TIMESTAMP NOT NULL,
+	PRIMARY KEY (user_id, group_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline);
+CREATE INDEX IF NOT EXISTS idx_moods_user_id ON moods(user_id);
+CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
 `
-
-	_, err := s.db.Exec(schema)
-	return err
-}
-
-// --- Пользователь ---
-
-func (s *SQLiteStore) SaveUser(_ context.Context, u *User) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_, err := s.db.Exec(`
-		INSERT INTO users (id, consent, reminders_on, onboarded_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			consent      = excluded.consent,
-			reminders_on = excluded.reminders_on,
-			onboarded_at = excluded.onboarded_at
-	`,
-		u.ID,
-		boolToInt(u.Consent),
-		boolToInt(u.RemindersOn),
-		u.OnboardedAt,
-	)
-	return err
-}
-
-func (s *SQLiteStore) GetUser(_ context.Context, id int64) (*User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	row := s.db.QueryRow(`
-		SELECT id, consent, reminders_on, onboarded_at
-		FROM users WHERE id = ?
-	`, id)
-
-	var (
-		u           User
-		consent     int
-		remindersOn int
-	)
-
-	err := row.Scan(&u.ID, &consent, &remindersOn, &u.OnboardedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
 	}
 
-	u.Consent = consent != 0
-	u.RemindersOn = remindersOn != 0
-	return &u, nil
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO groups(id, name) VALUES (1, 'ИКТн-54')`); err != nil {
+		return err
+	}
+
+	// Условный ALTER для существующих БД.
+	if err := s.ensureColumn("tasks", "subject", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("users", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (s *SQLiteStore) SetConsent(_ context.Context, id int64, consent bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	res, err := s.db.Exec(
-		`UPDATE users SET consent = ? WHERE id = ?`,
-		boolToInt(consent), id,
-	)
+func (s *SQLiteStore) ensureColumn(table, column, decl string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		return err
 	}
-	return checkRowsAffected(res, ErrUserNotFound)
-}
+	defer rows.Close()
 
-func (s *SQLiteStore) SetReminders(_ context.Context, id int64, on bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	res, err := s.db.Exec(
-		`UPDATE users SET reminders_on = ? WHERE id = ?`,
-		boolToInt(on), id,
-	)
-	if err != nil {
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue sql.NullString
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
-	return checkRowsAffected(res, ErrUserNotFound)
+	_, err = s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, decl))
+	return err
 }
 
 // --- Задачи ---
@@ -146,11 +161,12 @@ func (s *SQLiteStore) CreateTask(_ context.Context, t *Task) (int64, error) {
 	defer s.mu.Unlock()
 
 	res, err := s.db.Exec(`
-		INSERT INTO tasks (user_id, title, deadline, urgent, important, status, reminder_sent)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (user_id, title, subject, deadline, urgent, important, status, reminder_sent)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		t.UserID,
 		t.Title,
+		t.Subject,
 		t.Deadline,
 		boolToInt(t.Urgent),
 		boolToInt(t.Important),
@@ -160,12 +176,7 @@ func (s *SQLiteStore) CreateTask(_ context.Context, t *Task) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
+	return res.LastInsertId()
 }
 
 func (s *SQLiteStore) GetTasks(_ context.Context, userID int64) ([]Task, error) {
@@ -173,7 +184,7 @@ func (s *SQLiteStore) GetTasks(_ context.Context, userID int64) ([]Task, error) 
 	defer s.mu.Unlock()
 
 	rows, err := s.db.Query(`
-		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
+		SELECT id, user_id, title, subject, deadline, urgent, important, status, reminder_sent
 		FROM tasks WHERE user_id = ?
 	`, userID)
 	if err != nil {
@@ -202,23 +213,24 @@ func (s *SQLiteStore) UpdateTask(_ context.Context, t *Task) error {
 
 	res, err := s.db.Exec(`
 		UPDATE tasks SET
-			user_id       = ?,
 			title         = ?,
+			subject       = ?,
 			deadline      = ?,
 			urgent        = ?,
 			important     = ?,
 			status        = ?,
 			reminder_sent = ?
-		WHERE id = ?
+		WHERE id = ? AND user_id = ?
 	`,
-		t.UserID,
 		t.Title,
+		t.Subject,
 		t.Deadline,
 		boolToInt(t.Urgent),
 		boolToInt(t.Important),
 		string(t.Status),
 		boolToInt(t.ReminderSent),
 		t.ID,
+		t.UserID,
 	)
 	if err != nil {
 		return err
@@ -251,10 +263,9 @@ func (s *SQLiteStore) SetTaskStatus(_ context.Context, userID, taskID int64, sta
 	if err := t.CanTransitionTo(status); err != nil {
 		return err
 	}
-
 	_, err = s.db.Exec(
-		`UPDATE tasks SET status = ? WHERE id = ?`,
-		string(status), taskID,
+		`UPDATE tasks SET status = ? WHERE id = ? AND user_id = ?`,
+		string(status), taskID, userID,
 	)
 	return err
 }
@@ -264,7 +275,7 @@ func (s *SQLiteStore) GetTasksDueBefore(_ context.Context, before time.Time) ([]
 	defer s.mu.Unlock()
 
 	rows, err := s.db.Query(`
-		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
+		SELECT id, user_id, title, subject, deadline, urgent, important, status, reminder_sent
 		FROM tasks
 		WHERE deadline IS NOT NULL
 		  AND deadline > '1900-01-01'
@@ -299,11 +310,11 @@ func (s *SQLiteStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 	return checkRowsAffected(res, ErrTaskNotFound)
 }
 
-// --- Вспомогательные ---
+// --- helpers ---
 
 func (s *SQLiteStore) getTaskLocked(userID, taskID int64) (*Task, error) {
 	row := s.db.QueryRow(`
-		SELECT id, user_id, title, deadline, urgent, important, status, reminder_sent
+		SELECT id, user_id, title, subject, deadline, urgent, important, status, reminder_sent
 		FROM tasks WHERE id = ? AND user_id = ?
 	`, taskID, userID)
 
@@ -325,15 +336,13 @@ func scanTask(row *sql.Row) (*Task, error) {
 		status       string
 		reminderSent int
 	)
-
 	err := row.Scan(
-		&t.ID, &t.UserID, &t.Title, &t.Deadline,
+		&t.ID, &t.UserID, &t.Title, &t.Subject, &t.Deadline,
 		&urgent, &important, &status, &reminderSent,
 	)
 	if err != nil {
 		return nil, err
 	}
-
 	t.Urgent = urgent != 0
 	t.Important = important != 0
 	t.Status = TaskStatus(status)
@@ -343,7 +352,6 @@ func scanTask(row *sql.Row) (*Task, error) {
 
 func scanTasks(rows *sql.Rows) ([]Task, error) {
 	var result []Task
-
 	for rows.Next() {
 		var (
 			t            Task
@@ -352,26 +360,20 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 			status       string
 			reminderSent int
 		)
-
 		err := rows.Scan(
-			&t.ID, &t.UserID, &t.Title, &t.Deadline,
+			&t.ID, &t.UserID, &t.Title, &t.Subject, &t.Deadline,
 			&urgent, &important, &status, &reminderSent,
 		)
 		if err != nil {
 			return nil, err
 		}
-
 		t.Urgent = urgent != 0
 		t.Important = important != 0
 		t.Status = TaskStatus(status)
 		t.ReminderSent = reminderSent != 0
 		result = append(result, t)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return result, rows.Err()
 }
 
 func boolToInt(b bool) int {
@@ -393,3 +395,4 @@ func checkRowsAffected(res sql.Result, notFound error) error {
 }
 
 var _ Store = (*SQLiteStore)(nil)
+var _ Store = (*MemoryStore)(nil)

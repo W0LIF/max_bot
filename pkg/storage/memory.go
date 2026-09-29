@@ -8,10 +8,20 @@ import (
 )
 
 type MemoryStore struct {
-	mu         sync.Mutex
-	users      map[int64]*User
-	tasks      map[int64]*Task
-	nextTaskID int64
+	mu sync.RWMutex
+
+	users    map[int64]*User
+	tasks    map[int64]*Task
+	moods    []Mood
+	notes    []Note
+	feedback []Feedback
+
+	nextTaskID  int64
+	moodSeq     int64
+	noteSeq     int64
+	feedbackSeq int64
+
+	userGroups map[int64]int64
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -19,54 +29,8 @@ func NewMemoryStore() *MemoryStore {
 		users:      make(map[int64]*User),
 		tasks:      make(map[int64]*Task),
 		nextTaskID: 1,
+		userGroups: map[int64]int64{},
 	}
-}
-
-// --- Пользователь ---
-
-func (s *MemoryStore) SaveUser(_ context.Context, u *User) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cp := *u
-	s.users[u.ID] = &cp
-	return nil
-}
-
-func (s *MemoryStore) GetUser(_ context.Context, id int64) (*User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	u, ok := s.users[id]
-	if !ok {
-		return nil, ErrUserNotFound
-	}
-	cp := *u
-	return &cp, nil
-}
-
-func (s *MemoryStore) SetConsent(_ context.Context, id int64, consent bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	u, ok := s.users[id]
-	if !ok {
-		return ErrUserNotFound
-	}
-	u.Consent = consent
-	return nil
-}
-
-func (s *MemoryStore) SetReminders(_ context.Context, id int64, on bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	u, ok := s.users[id]
-	if !ok {
-		return ErrUserNotFound
-	}
-	u.RemindersOn = on
-	return nil
 }
 
 // --- Задачи ---
@@ -80,13 +44,16 @@ func (s *MemoryStore) CreateTask(_ context.Context, t *Task) (int64, error) {
 
 	cp := *t
 	cp.ID = id
+	if cp.Status == "" {
+		cp.Status = TaskNew
+	}
 	s.tasks[id] = &cp
 	return id, nil
 }
 
 func (s *MemoryStore) GetTasks(_ context.Context, userID int64) ([]Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var result []Task
 	for _, t := range s.tasks {
@@ -99,8 +66,8 @@ func (s *MemoryStore) GetTasks(_ context.Context, userID int64) ([]Task, error) 
 }
 
 func (s *MemoryStore) GetTask(_ context.Context, userID, taskID int64) (*Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	t, ok := s.tasks[taskID]
 	if !ok || t.UserID != userID {
@@ -114,7 +81,8 @@ func (s *MemoryStore) UpdateTask(_ context.Context, t *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.tasks[t.ID]; !ok {
+	existing, ok := s.tasks[t.ID]
+	if !ok || existing.UserID != t.UserID {
 		return ErrTaskNotFound
 	}
 	cp := *t
@@ -150,15 +118,12 @@ func (s *MemoryStore) SetTaskStatus(_ context.Context, userID, taskID int64, sta
 }
 
 func (s *MemoryStore) GetTasksDueBefore(_ context.Context, before time.Time) ([]Task, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	var result []Task
 	for _, t := range s.tasks {
-		if t.Status == TaskDone {
-			continue
-		}
-		if t.ReminderSent {
+		if t.Status == TaskDone || t.ReminderSent {
 			continue
 		}
 		if t.Deadline.IsZero() {
@@ -184,8 +149,7 @@ func (s *MemoryStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 	return nil
 }
 
-// sortTasks сортирует срез задач:
-// сначала Important=true, потом Urgent=true, потом по Deadline.
+// sortTasks — сначала Important, потом Urgent, потом по Deadline.
 func sortTasks(tasks []Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {
 		a, b := tasks[i], tasks[j]

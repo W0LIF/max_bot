@@ -22,33 +22,35 @@ func (s TaskStatus) IsValid() bool {
 	}
 }
 
+// Task — задача пользователя.
+// Subject — колонка B3. Group не сохраняется в БД, ставится вручную
+// для GET /api/group/tasks.
 type Task struct {
 	ID           int64      `json:"id"`
 	UserID       int64      `json:"user_id"`
 	Title        string     `json:"title"`
+	Subject      string     `json:"subject"`
 	Deadline     time.Time  `json:"deadline"`
 	Urgent       bool       `json:"urgent"`
 	Important    bool       `json:"important"`
 	Status       TaskStatus `json:"status"`
-	ReminderSent bool
+	ReminderSent bool       `json:"reminder_sent,omitempty"`
+
+	Group bool `json:"group,omitempty"`
 }
 
 var (
 	ErrTaskNotFound      = errors.New("storage: задача не найдена")
 	ErrInvalidStatus     = errors.New("storage: недопустимый статус")
 	ErrInvalidTransition = errors.New("storage: недопустимый переход статуса")
-	ErrUserNotFound      = errors.New("storage: пользователь не найден")
 )
 
-// CanTransitionTo проверяет, разрешён ли переход из текущего статуса
-// задачи в next. Возвращает nil, если переход разрешён, и одну из
-// ошибок (ErrInvalidStatus / ErrInvalidTransition) — если нет
 func (t *Task) CanTransitionTo(next TaskStatus) error {
 	if !next.IsValid() {
 		return ErrInvalidStatus
 	}
 	if t.Status == next {
-		return nil // идемпотентно
+		return nil
 	}
 	switch t.Status {
 	case TaskNew:

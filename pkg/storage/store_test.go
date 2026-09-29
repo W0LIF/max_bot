@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
+// --- runStoreTests: базовая проверка user + task ---
+
 func runStoreTests(t *testing.T, s Store) {
 	t.Helper()
-
 	ctx := context.Background()
 
 	// --- Пользователи ---
@@ -355,6 +356,206 @@ func runStoreTests(t *testing.T, s Store) {
 		got, _ := s.GetTask(ctx, 94, id)
 		if !got.ReminderSent {
 			t.Fatalf("ReminderSent не стал true")
+		}
+	})
+}
+
+// --- runExtendedStoreTests: moods/notes/feedback ---
+
+func runExtendedStoreTests(t *testing.T, s Store) {
+	t.Helper()
+	ctx := context.Background()
+
+	t.Run("CreateAndGetMoods", func(t *testing.T) {
+		m := &Mood{UserID: 100, Value: MoodGood, Note: "ок"}
+		id, err := s.CreateMood(ctx, m)
+		if err != nil {
+			t.Fatalf("CreateMood: %v", err)
+		}
+		if id == 0 {
+			t.Fatal("CreateMood вернул 0")
+		}
+
+		moods, err := s.GetMoods(ctx, 100, 7)
+		if err != nil {
+			t.Fatalf("GetMoods: %v", err)
+		}
+		if len(moods) != 1 {
+			t.Fatalf("ожидали 1 запись, получили %d", len(moods))
+		}
+		if moods[0].Value != MoodGood {
+			t.Fatalf("Value не совпадает: %q", moods[0].Value)
+		}
+	})
+
+	t.Run("GetMoods_FiltersOldEntries", func(t *testing.T) {
+		old := &Mood{
+			UserID:    101,
+			Value:     MoodBad,
+			CreatedAt: time.Now().AddDate(0, 0, -30),
+		}
+		if _, err := s.CreateMood(ctx, old); err != nil {
+			t.Fatalf("CreateMood: %v", err)
+		}
+
+		moods, err := s.GetMoods(ctx, 101, 7)
+		if err != nil {
+			t.Fatalf("GetMoods: %v", err)
+		}
+		if len(moods) != 0 {
+			t.Fatalf("старая запись не должна попасть в окно 7 дней, получили %d", len(moods))
+		}
+	})
+
+	t.Run("GetMoods_IsolatesUsers", func(t *testing.T) {
+		_, _ = s.CreateMood(ctx, &Mood{UserID: 102, Value: MoodGood})
+		_, _ = s.CreateMood(ctx, &Mood{UserID: 103, Value: MoodBad})
+
+		moods, _ := s.GetMoods(ctx, 102, 7)
+		for _, m := range moods {
+			if m.UserID != 102 {
+				t.Fatalf("вернулась чужая запись: %+v", m)
+			}
+		}
+	})
+
+	t.Run("CreateAndGetNotes", func(t *testing.T) {
+		start := time.Now().Add(1 * time.Hour)
+		end := start.Add(1 * time.Hour)
+		id, err := s.CreateNote(ctx, &Note{
+			UserID: 110,
+			Text:   "встреча",
+			Start:  start,
+			End:    end,
+		})
+		if err != nil {
+			t.Fatalf("CreateNote: %v", err)
+		}
+		if id == 0 {
+			t.Fatal("CreateNote вернул 0")
+		}
+
+		notes, err := s.GetNotes(ctx, 110)
+		if err != nil {
+			t.Fatalf("GetNotes: %v", err)
+		}
+		if len(notes) != 1 || notes[0].Text != "встреча" {
+			t.Fatalf("данные заметки не совпадают: %+v", notes)
+		}
+	})
+
+	t.Run("DeleteNote", func(t *testing.T) {
+		id, _ := s.CreateNote(ctx, &Note{
+			UserID: 111,
+			Text:   "удалить",
+			Start:  time.Now(),
+			End:    time.Now().Add(time.Hour),
+		})
+		if err := s.DeleteNote(ctx, 111, id); err != nil {
+			t.Fatalf("DeleteNote: %v", err)
+		}
+		notes, _ := s.GetNotes(ctx, 111)
+		if len(notes) != 0 {
+			t.Fatalf("заметка не удалилась")
+		}
+	})
+
+	t.Run("DeleteNote_NotFound", func(t *testing.T) {
+		err := s.DeleteNote(ctx, 111, 99999)
+		if !errors.Is(err, ErrNoteNotFound) {
+			t.Fatalf("ожидали ErrNoteNotFound, получили %v", err)
+		}
+	})
+
+	t.Run("DeleteNote_WrongUser", func(t *testing.T) {
+		id, _ := s.CreateNote(ctx, &Note{
+			UserID: 112,
+			Text:   "не трогать",
+			Start:  time.Now(),
+			End:    time.Now().Add(time.Hour),
+		})
+		err := s.DeleteNote(ctx, 113, id)
+		if !errors.Is(err, ErrNoteNotFound) {
+			t.Fatalf("ожидали ErrNoteNotFound, получили %v", err)
+		}
+	})
+
+	t.Run("CreateFeedback", func(t *testing.T) {
+		id, err := s.CreateFeedback(ctx, &Feedback{UserID: 120, Text: "всё ок"})
+		if err != nil {
+			t.Fatalf("CreateFeedback: %v", err)
+		}
+		if id == 0 {
+			t.Fatal("CreateFeedback вернул 0")
+		}
+	})
+}
+
+// --- runGroupStoreTests: группы ---
+
+func runGroupStoreTests(t *testing.T, s Store) {
+	t.Helper()
+	ctx := context.Background()
+
+	t.Run("GetUserGroup_NotFound", func(t *testing.T) {
+		_, err := s.GetUserGroup(ctx, 999)
+		if !errors.Is(err, ErrGroupNotFound) {
+			t.Fatalf("ожидали ErrGroupNotFound, получили %v", err)
+		}
+	})
+
+	t.Run("EnsureAndGetUserGroup", func(t *testing.T) {
+		if err := s.EnsureGroup(ctx, 200, DemoGroupID); err != nil {
+			t.Fatalf("EnsureGroup: %v", err)
+		}
+		gid, err := s.GetUserGroup(ctx, 200)
+		if err != nil {
+			t.Fatalf("GetUserGroup: %v", err)
+		}
+		if gid != DemoGroupID {
+			t.Fatalf("ожидали groupID=%d, получили %d", DemoGroupID, gid)
+		}
+	})
+
+	t.Run("EnsureGroup_Idempotent", func(t *testing.T) {
+		_ = s.EnsureGroup(ctx, 201, DemoGroupID)
+		if err := s.EnsureGroup(ctx, 201, DemoGroupID); err != nil {
+			t.Fatalf("повторный EnsureGroup: %v", err)
+		}
+		gid, _ := s.GetUserGroup(ctx, 201)
+		if gid != DemoGroupID {
+			t.Fatalf("группа изменилась: %d", gid)
+		}
+	})
+
+	t.Run("GetGroupMembers", func(t *testing.T) {
+		_ = s.SaveUser(ctx, &User{ID: 210, Name: "Аня"})
+		_ = s.SaveUser(ctx, &User{ID: 211, Name: "Борис"})
+		_ = s.EnsureGroup(ctx, 210, DemoGroupID)
+		_ = s.EnsureGroup(ctx, 211, DemoGroupID)
+
+		_, _ = s.CreateTask(ctx, &Task{
+			UserID: 210,
+			Title:  "активная",
+			Status: TaskNew,
+		})
+
+		members, err := s.GetGroupMembers(ctx, DemoGroupID)
+		if err != nil {
+			t.Fatalf("GetGroupMembers: %v", err)
+		}
+
+		var found bool
+		for _, m := range members {
+			if m.ID == 210 {
+				found = true
+				if m.Tasks < 1 {
+					t.Fatalf("у Ани должна быть активная задача, получили %d", m.Tasks)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("Аня не найдена в членах группы")
 		}
 	})
 }
