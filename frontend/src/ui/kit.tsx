@@ -1,6 +1,9 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
+import type { MoodValue } from '../types'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
+
+export type { MoodValue }
 
 /* ——— Логотип «Телескоп» ——— */
 export function Logo({ size = 40 }: { size?: number }) {
@@ -213,8 +216,6 @@ export function ProgressRing({ value, size = 42 }: { value: number; size?: numbe
 }
 
 /* ——— Рожица настроения ——— */
-export type MoodValue = 'good' | 'ok' | 'bad'
-
 const MOUTHS: Record<MoodValue, string> = {
   good: 'M8.4 13.8c1 1.4 2.2 2.1 3.6 2.1s2.6-.7 3.6-2.1',
   ok: 'M8.6 15.4h6.8',
@@ -278,7 +279,7 @@ export function Row({
   )
 
   return onClick ? (
-    <button type="button" className="row">
+    <button type="button" className="row" onClick={onClick}>
       {content}
     </button>
   ) : (

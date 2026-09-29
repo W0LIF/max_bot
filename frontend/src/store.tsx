@@ -1,10 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { INITIAL_TASKS, MOOD_HISTORY, USER } from './data'
-import type { MoodEntry, Note, Task, TaskStatus } from './data'
+import type { MoodEntry, Note, Settings, Task, TaskStatus } from './types'
+import { sameId } from './types'
 import type { MoodValue } from './ui/kit'
 
 const STORAGE_KEY = 'telescope.state.v1'
+
+/* История настроения всегда упорядочена по дням недели — график рисует точки
+   в этом порядке, поэтому сортировка по значению его ломает. */
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+const weekdayOf = (date: Date) => WEEKDAYS[(date.getDay() + 6) % 7]
+
+const byWeekday = (moods: MoodEntry[]) =>
+  [...moods].sort((a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day))
 
 type Settings = {
   notifications: boolean
@@ -36,7 +46,9 @@ function loadState(): State {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return DEFAULT_STATE
-    return { ...DEFAULT_STATE, ...(JSON.parse(raw) as Partial<State>) }
+    const parsed = JSON.parse(raw) as Partial<State>
+    /* В localStorage могли лежать записи в перемешанном порядке — приводим к дням недели. */
+    return { ...DEFAULT_STATE, ...parsed, moods: byWeekday(parsed.moods ?? DEFAULT_STATE.moods) }
   } catch {
     return DEFAULT_STATE
   }
@@ -55,8 +67,8 @@ type Store = {
   authorize: () => void
   logout: () => void
   addTask: (task: Omit<Task, 'id' | 'status'>) => void
-  toggleTask: (id: string) => void
-  setTaskStatus: (id: string, status: TaskStatus) => void
+  toggleTask: (id: Task['id']) => void
+  setTaskStatus: (id: Task['id'], status: TaskStatus) => void
   saveMood: (mood: MoodValue, note: string) => void
   addNote: (note: Omit<Note, 'id'>) => void
   toggleMember: (id: string) => void
@@ -91,30 +103,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((s) => ({
       ...s,
       tasks: s.tasks.map((t) =>
-        t.id === id ? { ...t, status: t.status === 'done' ? 'in_progress' : 'done' } : t,
+        sameId(t.id, id) ? { ...t, status: t.status === 'done' ? 'in_progress' : 'done' } : t,
       ),
     }))
   }, [])
 
   const setTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    setState((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, status } : t)) }))
+    setState((s) => ({ ...s, tasks: s.tasks.map((t) => (sameId(t.id, id) ? { ...t, status } : t)) }))
   }, [])
 
   const saveMood = useCallback((mood: MoodValue, note: string) => {
     setState((s) => {
       const today = new Date()
-      const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-      const index = (today.getDay() + 6) % 7
+      const day = weekdayOf(today)
       const entry: MoodEntry = {
         id: `d${today.getTime()}`,
-        day: weekdays[index],
+        day,
         date: today.toLocaleDateString('ru-RU').slice(0, 5),
         value: mood === 'good' ? 18 : mood === 'ok' ? 13 : 8,
         mood,
         note: note || undefined,
       }
-      const rest = s.moods.filter((m) => m.day !== entry.day)
-      return { ...s, moods: [...rest, entry].sort((a, b) => a.value - b.value) }
+      /* Отметка за этот день заменяется, порядок дней недели сохраняется —
+         сортировка по value перемешивала точки и ломала линию графика. */
+      const rest = s.moods.filter((m) => m.day !== day)
+      return { ...s, moods: byWeekday([...rest, entry]) }
     })
   }, [])
 
@@ -140,12 +153,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const done = state.tasks.filter((t) => t.status === 'done').length
     const progress = state.tasks.length ? Math.round((done / state.tasks.length) * 100) : 0
     const last = state.moods[state.moods.length - 1]
+    const todayEntry = state.moods.find((m) => m.day === weekdayOf(new Date()))
     return {
       todayTasks,
       done,
       progress,
       load: Math.min(3, todayTasks.length > 2 ? 3 : Math.max(1, todayTasks.length)),
-      mood: (last?.mood ?? 'good') as MoodValue,
+      mood: (todayEntry?.mood ?? last?.mood ?? 'good') as MoodValue,
     }
   }, [state.tasks, state.moods])
 

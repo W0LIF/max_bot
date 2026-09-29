@@ -18,8 +18,8 @@ import type { MoodValue } from '../ui/kit'
 import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
-import { MOOD_META, STATUS_META } from '../data'
-import type { Task } from '../data'
+import { MOOD_META, OVERDUE_COLOR, STATUS_META } from '../data'
+import { isOverdue, type Task } from '../types'
 
 /** Карточка задачи: главная, список задач, групповые задания. */
 export function TaskCard({
@@ -31,20 +31,22 @@ export function TaskCard({
   onToggle?: () => void
   right?: ReactNode
 }) {
+  const overdue = isOverdue(task)
   const status = STATUS_META[task.status]
+  const color = overdue ? OVERDUE_COLOR : status.color
   const cls = [
     'task-card',
     task.status === 'done' ? 'task-card--done' : '',
-    task.status === 'overdue' ? 'task-card--overdue' : '',
+    overdue ? 'task-card--overdue' : '',
   ].join(' ')
 
   return (
     <div className={cls}>
-      <span className="task-card__flag" style={{ background: status.color }} />
+      <span className="task-card__flag" style={{ background: color }} />
       <button type="button" className="check" onClick={onToggle} aria-label="Отметить выполненной">
         <span
           className={`check__box check__box--round${task.status === 'done' ? ' check__box--on' : ''}`}
-          style={task.status === 'done' ? { background: status.color, borderColor: status.color } : undefined}
+          style={task.status === 'done' ? { background: color, borderColor: color } : undefined}
         >
           {task.status === 'done' && <Icon name="check" size={14} strokeWidth={2.6} />}
         </span>
@@ -55,7 +57,7 @@ export function TaskCard({
           {task.subject} · {task.deadline}
         </span>
       </span>
-      {right ?? <span className="status-dot" style={{ background: status.color }} />}
+      {right ?? <span className="status-dot" style={{ background: color }} />}
     </div>
   )
 }

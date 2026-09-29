@@ -1,35 +1,4 @@
-import type { MoodValue } from './ui/kit'
-
-/* ——— Модель данных ——— */
-export type TaskStatus = 'new' | 'in_progress' | 'done' | 'overdue' | 'frozen'
-export type Priority = 'urgent' | 'important' | 'later'
-
-export type Task = {
-  id: string
-  title: string
-  subject: string
-  deadline: string
-  status: TaskStatus
-  priority: Priority
-  owner?: string
-  group?: boolean
-}
-
-export type MoodEntry = {
-  id: string
-  day: string
-  date: string
-  value: number
-  mood: MoodValue
-  note?: string
-}
-
-export type Member = {
-  id: string
-  name: string
-  group: string
-  tasks: number
-}
+import type { Member, MoodEntry, MoodValue, Priority, Task, TaskStatus } from './types'
 
 export type Achievement = {
   id: string
@@ -40,24 +9,18 @@ export type Achievement = {
   y: number
 }
 
-export type Note = {
-  id: string
-  text: string
-  allDay: boolean
-  start: string
-  end: string
-}
-
 export type Faq = { q: string; a: string }
 
-/* ——— Справочники ——— */
+/* ——— Справочники ———
+   Статусов три; «Просрочено» показываем по вычисляемому флагу isOverdue(), не по статусу. */
 export const STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
   new: { label: 'Новая', color: 'var(--blue-light)' },
   in_progress: { label: 'В процессе', color: 'var(--st-progress)' },
   done: { label: 'Выполнено', color: 'var(--st-done)' },
-  overdue: { label: 'Просрочено', color: 'var(--st-overdue)' },
-  frozen: { label: 'На паузе', color: 'var(--st-frozen)' },
 }
+
+/** Цвет флага/точки для просроченной задачи. */
+export const OVERDUE_COLOR = 'var(--st-overdue)'
 
 export const PRIORITY_META: Record<Priority, { label: string; tone: 'urgent' | 'important' | 'later' }> = {
   urgent: { label: 'Срочно', tone: 'urgent' },
@@ -105,7 +68,7 @@ export const INITIAL_TASKS: Task[] = [
     title: 'Курсовая: расчёт',
     subject: 'ОТЦ',
     deadline: '19 сентября · 09:00',
-    status: 'overdue',
+    status: 'new',
     priority: 'important',
   },
   {
@@ -120,8 +83,8 @@ export const INITIAL_TASKS: Task[] = [
     id: 't5',
     title: 'Эссе по истории',
     subject: 'История',
-    deadline: '22 сентября',
-    status: 'frozen',
+    deadline: '5 октября',
+    status: 'new',
     priority: 'later',
   },
 ]
@@ -151,8 +114,8 @@ export const GROUP_TASKS: Task[] = [
     id: 'g3',
     title: 'Курсовая: глава 2',
     subject: 'Физика',
-    deadline: 'Завтра · 12:00',
-    status: 'overdue',
+    deadline: 'Вчера · 12:00',
+    status: 'in_progress',
     priority: 'urgent',
     owner: 'Олег В.',
     group: true,

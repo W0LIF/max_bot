@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
 import { REMINDERS, STATUS_META, SUBJECTS, PRIORITY_META } from '../data'
-import type { Priority, TaskStatus } from '../data'
+import { isOverdue, type Priority, type Task, type TaskStatus } from '../types'
 import { TaskCard } from './home'
 
 /* 6-7. Добавить задачу вручную / по фото */
@@ -175,10 +175,16 @@ export function ScanScreen() {
 export function TasksScreen() {
   const { push } = useNav()
   const { state, toggleTask } = useStore()
-  const [filter, setFilter] = useState<'all' | TaskStatus>('all')
+  const [filter, setFilter] = useState<'all' | TaskStatus | 'overdue'>('all')
 
-  const tasks = filter === 'all' ? state.tasks : state.tasks.filter((t) => t.status === filter)
-  const filters: { value: 'all' | TaskStatus; label: string }[] = [
+  /* «Просрочено» — не статус, а вычисляемый признак по deadline. */
+  const tasks =
+    filter === 'all'
+      ? state.tasks
+      : filter === 'overdue'
+        ? state.tasks.filter((t) => isOverdue(t))
+        : state.tasks.filter((t) => t.status === filter)
+  const filters: { value: 'all' | TaskStatus | 'overdue'; label: string }[] = [
     { value: 'all', label: 'Все' },
     { value: 'in_progress', label: 'В процессе' },
     { value: 'new', label: 'Новые' },
