@@ -127,22 +127,25 @@ func TestValidateInitData(t *testing.T) {
 					return "00" + h[2:]
 				})
 			},
-			token:  testToken,
-			maxAge: time.Hour,
+			token:   testToken,
+			maxAge:  time.Hour,
+			wantErr: true,
 		},
 		{
 			name:     "подписано чужим токеном",
 			initData: func(t *testing.T) string { return signInitData(t, "999:OTHER_TOKEN", now) },
 			token:    testToken,
 			maxAge:   time.Hour,
+			wantErr:  true,
 		},
 		{
 			name: "подменён user при прежнем hash",
 			initData: func(t *testing.T) string {
 				return tamperField(t, signInitData(t, testToken, now), "user", `{"id":1}`)
 			},
-			token:  testToken,
-			maxAge: time.Hour,
+			token:   testToken,
+			maxAge:  time.Hour,
+			wantErr: true,
 		},
 		{
 			name:     "hash не hex",

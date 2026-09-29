@@ -360,6 +360,12 @@ func runStoreTests(t *testing.T, s Store) {
 		if err := s.SetTaskReminderSent(ctx, id); !errors.Is(err, ErrReminderAlreadySent) {
 			t.Fatalf("повторная отметка должна отклоняться, получили %v", err)
 		}
+		if err := s.ResetTaskReminderSent(ctx, id); err != nil {
+			t.Fatalf("ResetTaskReminderSent вернул ошибку: %v", err)
+		}
+		if err := s.SetTaskReminderSent(ctx, id); err != nil {
+			t.Fatalf("повторная попытка после сброса не удалась: %v", err)
+		}
 	})
 }
 
@@ -528,6 +534,18 @@ func runGroupStoreTests(t *testing.T, s Store) {
 		gid, _ := s.GetUserGroup(ctx, 201)
 		if gid != DemoGroupID {
 			t.Fatalf("группа изменилась: %d", gid)
+		}
+	})
+
+	t.Run("LeaveGroups", func(t *testing.T) {
+		if err := s.EnsureGroup(ctx, 202, DemoGroupID); err != nil {
+			t.Fatalf("EnsureGroup: %v", err)
+		}
+		if err := s.LeaveGroups(ctx, 202); err != nil {
+			t.Fatalf("LeaveGroups: %v", err)
+		}
+		if _, err := s.GetUserGroup(ctx, 202); !errors.Is(err, ErrGroupNotFound) {
+			t.Fatalf("ожидали выход из группы, получили %v", err)
 		}
 	})
 

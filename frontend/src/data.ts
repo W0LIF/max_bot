@@ -23,9 +23,10 @@ export const STATUS_META: Record<TaskStatus, { label: string; color: string }> =
 export const OVERDUE_COLOR = 'var(--st-overdue)'
 
 export const PRIORITY_META: Record<Priority, { label: string; tone: 'urgent' | 'important' | 'later' }> = {
-  urgent: { label: 'Срочно', tone: 'urgent' },
-  important: { label: 'Важно', tone: 'important' },
-  later: { label: 'Позже', tone: 'later' },
+  urgent_important: { label: 'Важно и срочно', tone: 'urgent' },
+  important: { label: 'Важно, не срочно', tone: 'important' },
+  urgent: { label: 'Срочно, не важно', tone: 'urgent' },
+  later: { label: 'Не срочно и не важно', tone: 'later' },
 }
 
 export const MOOD_META: Record<MoodValue, { label: string; color: string }> = {
@@ -53,7 +54,7 @@ export const INITIAL_TASKS: Task[] = [
     subject: 'Языки программирования',
     deadline: 'Сегодня · 18:30',
     status: 'in_progress',
-    priority: 'urgent',
+    priority: 'urgent_important',
   },
   {
     id: 't2',
@@ -96,7 +97,7 @@ export const GROUP_TASKS: Task[] = [
     subject: 'Языки программирования',
     deadline: 'Сегодня · 18:30',
     status: 'done',
-    priority: 'urgent',
+    priority: 'urgent_important',
     owner: 'Аня А.',
     group: true,
   },
@@ -116,7 +117,7 @@ export const GROUP_TASKS: Task[] = [
     subject: 'Физика',
     deadline: 'Вчера · 12:00',
     status: 'in_progress',
-    priority: 'urgent',
+    priority: 'urgent_important',
     owner: 'Олег В.',
     group: true,
   },

@@ -10,10 +10,31 @@ import { TaskCard } from './home'
 /* 13. Совместный режим: выбор однокурсников */
 export function GroupScreen() {
   const { push } = useNav()
-  const { state, toggleMember } = useStore()
+  const { state, connection, toggleMember, setGroupSharing } = useStore()
   const [query, setQuery] = useState('')
 
   const members = state.groupMembers.filter((m) => m.name.toLowerCase().includes(query.toLowerCase()))
+
+  if (!state.groupSharing) {
+    return (
+      <div className="screen">
+        <div className="screen__hero">
+          <h1 className="h1">Общие задачи</h1>
+          <span className="caption">Совместный режим отключён</span>
+        </div>
+        <Card tone="cream">
+          <p className="body">
+            Если включить доступ, участники группы увидят названия ваших задач, предметы, сроки и статусы.
+            Доступ можно отключить в любой момент.
+          </p>
+        </Card>
+        <div className="screen__spacer" />
+        <Button disabled={connection !== 'online' && connection !== 'demo'} onClick={() => void setGroupSharing(true)}>
+          Поделиться задачами
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div className="screen">
@@ -21,6 +42,10 @@ export function GroupScreen() {
         <h1 className="h1">Общие задачи</h1>
         <span className="caption">Выберите участников</span>
       </div>
+
+      <button type="button" className="link-button" onClick={() => void setGroupSharing(false)}>
+        Отключить общий доступ
+      </button>
 
       <span className="input-wrap input-wrap--left">
         <Input

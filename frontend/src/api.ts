@@ -47,6 +47,7 @@ export type ApiProfile = {
   consent: boolean
   onboarded: boolean
   reminders_on: boolean
+  group_sharing: boolean
 }
 
 async function request<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
@@ -144,8 +145,8 @@ export const api = {
         title: task.title,
         subject: task.subject,
         deadline: deadline.toISOString(),
-        urgent: task.priority === 'urgent',
-        important: task.priority !== 'later',
+        urgent: task.priority === 'urgent_important' || task.priority === 'urgent',
+        important: task.priority === 'urgent_important' || task.priority === 'important',
       }),
     })
     return mapTask(created)
@@ -168,6 +169,11 @@ export const api = {
   getGroupMembers: () => request<Member[]>('/group/members'),
   getGroupTasks: async (owners: Map<number, string>) =>
     (await request<ApiTask[]>('/group/tasks')).map((task) => mapTask(task, owners)),
+  setGroupSharing: (enabled: boolean) =>
+    request<{ enabled: boolean }>('/group/sharing', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
   scanTask: (photo: File) => {
     const form = new FormData()
     form.append('photo', photo)

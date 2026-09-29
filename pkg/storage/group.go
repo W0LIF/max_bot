@@ -26,8 +26,19 @@ func (s *SQLiteStore) EnsureGroup(ctx context.Context, userID, groupID int64) er
 	defer s.mu.Unlock()
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO group_members(user_id, group_id, joined_at)
-		 VALUES(?, ?, ?)`, userID, groupID, time.Now().UTC())
+		`INSERT INTO group_members(user_id, group_id, joined_at, sharing_consent)
+		 VALUES(?, ?, ?, 1)
+		 ON CONFLICT(user_id, group_id) DO UPDATE SET
+		   joined_at = excluded.joined_at,
+		   sharing_consent = 1`, userID, groupID, time.Now().UTC())
+	return err
+}
+
+func (s *SQLiteStore) LeaveGroups(ctx context.Context, userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.ExecContext(ctx, `DELETE FROM group_members WHERE user_id = ?`, userID)
 	return err
 }
 
@@ -37,7 +48,7 @@ func (s *SQLiteStore) GetUserGroup(ctx context.Context, userID int64) (int64, er
 
 	var gid int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT group_id FROM group_members WHERE user_id = ?`, userID).Scan(&gid)
+		`SELECT group_id FROM group_members WHERE user_id = ? AND sharing_consent = 1`, userID).Scan(&gid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrGroupNotFound
@@ -58,7 +69,7 @@ func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupID int64) ([]Mem
 		FROM group_members gm
 		JOIN users u ON u.id = gm.user_id
 		JOIN groups g ON g.id = gm.group_id
-		WHERE gm.group_id = ?
+		WHERE gm.group_id = ? AND gm.sharing_consent = 1
 		ORDER BY u.name`, groupID)
 	if err != nil {
 		return nil, err
@@ -86,6 +97,13 @@ func (m *MemoryStore) EnsureGroup(_ context.Context, userID, groupID int64) erro
 	if _, ok := m.userGroups[userID]; !ok {
 		m.userGroups[userID] = groupID
 	}
+	return nil
+}
+
+func (m *MemoryStore) LeaveGroups(_ context.Context, userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.userGroups, userID)
 	return nil
 }
 

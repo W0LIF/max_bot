@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestSQLiteStore(t *testing.T) {
@@ -84,5 +87,47 @@ func TestSQLiteStore_MigrateExistingDB(t *testing.T) {
 	}
 	if u.Name != "Тест" {
 		t.Fatalf("Name не сохранился: %q", u.Name)
+	}
+}
+
+func TestSQLiteStore_MigratesLegacyGroupMembershipWithoutConsent(t *testing.T) {
+	path := t.TempDir() + "/legacy.db"
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`CREATE TABLE group_members (
+		user_id INTEGER NOT NULL,
+		group_id INTEGER NOT NULL,
+		joined_at TIMESTAMP NOT NULL,
+		PRIMARY KEY (user_id, group_id)
+	)`)
+	if err != nil {
+		legacy.Close()
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`INSERT INTO group_members(user_id, group_id, joined_at) VALUES(42, 1, ?)`, time.Now().UTC())
+	if err != nil {
+		legacy.Close()
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("open migrated DB: %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.GetUserGroup(context.Background(), 42); !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("legacy membership must not count as consent: %v", err)
+	}
+	if err := store.EnsureGroup(context.Background(), 42, DemoGroupID); err != nil {
+		t.Fatalf("explicit opt-in failed: %v", err)
+	}
+	if gid, err := store.GetUserGroup(context.Background(), 42); err != nil || gid != DemoGroupID {
+		t.Fatalf("explicit opt-in not persisted: group=%d err=%v", gid, err)
 	}
 }

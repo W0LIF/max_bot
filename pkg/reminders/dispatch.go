@@ -46,6 +46,9 @@ func DispatchDue(ctx context.Context, store storage.Store, before time.Time, sen
 		}
 		if err := send(ctx, task); err != nil {
 			failures = append(failures, fmt.Errorf("send task %d reminder: %w", task.ID, err))
+			if resetErr := store.ResetTaskReminderSent(ctx, task.ID); resetErr != nil {
+				failures = append(failures, fmt.Errorf("reset task %d reminder: %w", task.ID, resetErr))
+			}
 			continue
 		}
 		sent++

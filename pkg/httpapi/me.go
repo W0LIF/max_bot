@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 
 	"max_bot_api/pkg/storage"
@@ -32,21 +31,20 @@ func handleMe(store storage.Store) http.HandlerFunc {
 			return
 		}
 
-		// Автоматически добавляем в демо-группу, если ещё не там.
-		// Ошибку логируем, но не валим запрос — /api/me должен
-		// отвечать даже если группа недоступна.
-		if _, err := store.GetUserGroup(ctx, u.ID); errors.Is(err, storage.ErrGroupNotFound) {
-			if err := store.EnsureGroup(ctx, u.ID, storage.DemoGroupID); err != nil {
-				log.Printf("me: EnsureGroup(%d): %v", u.ID, err)
-			}
+		_, groupErr := store.GetUserGroup(ctx, u.ID)
+		if groupErr != nil && !errors.Is(groupErr, storage.ErrGroupNotFound) {
+			writeErr(w, http.StatusInternalServerError, "Ошибка хранилища")
+			return
 		}
+		groupSharing := groupErr == nil
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"id":           stored.ID,
-			"name":         stored.Name,
-			"consent":      stored.Consent,
-			"onboarded":    stored.IsOnboarded(),
-			"reminders_on": stored.RemindersOn,
+			"id":            stored.ID,
+			"name":          stored.Name,
+			"consent":       stored.Consent,
+			"onboarded":     stored.IsOnboarded(),
+			"reminders_on":  stored.RemindersOn,
+			"group_sharing": groupSharing,
 		})
 	}
 }

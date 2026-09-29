@@ -6,8 +6,8 @@ export type MoodValue = 'good' | 'ok' | 'bad'
    «Просрочено» — не статус, а вычисляемый признак (см. isOverdue). */
 export type TaskStatus = 'new' | 'in_progress' | 'done'
 
-/* Приоритетов ровно три — сервер отдаёт флаги urgent/important (см. priorityFromFlags). */
-export type Priority = 'urgent' | 'important' | 'later'
+/* Четыре квадранта Эйзенхауэра кодируются серверными флагами urgent/important. */
+export type Priority = 'urgent_important' | 'important' | 'urgent' | 'later'
 
 export type Task = {
   /* id приходят с сервера числами, в моках — строки. Сравнение только через sameId(). */
@@ -66,8 +66,9 @@ export function sameId(a: string | number, b: string | number): boolean {
 
 /** Приоритет из серверных флагов urgent / important. */
 export function priorityFromFlags(urgent: boolean, important: boolean): Priority {
-  if (urgent) return 'urgent'
+  if (urgent && important) return 'urgent_important'
   if (important) return 'important'
+  if (urgent) return 'urgent'
   return 'later'
 }
 

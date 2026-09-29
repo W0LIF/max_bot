@@ -1,11 +1,36 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"max_bot_api/pkg/storage"
 )
+
+func handleGroupSharing(store storage.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, "Не удалось разобрать тело")
+			return
+		}
+
+		var err error
+		if req.Enabled {
+			err = store.EnsureGroup(r.Context(), userIDFrom(r.Context()), storage.DemoGroupID)
+		} else {
+			err = store.LeaveGroups(r.Context(), userIDFrom(r.Context()))
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "Не удалось изменить доступ к задачам")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
+	}
+}
 
 func handleGroupMembers(store storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

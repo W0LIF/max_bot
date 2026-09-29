@@ -30,6 +30,7 @@ type State = {
   moods: MoodEntry[]
   notes: Note[]
   members: string[]
+  groupSharing: boolean
   groupMembers: Member[]
   groupTasks: Task[]
   settings: Settings
@@ -42,6 +43,7 @@ const DEFAULT_STATE: State = {
   moods: MOOD_HISTORY,
   notes: [],
   members: ['m1', 'm3'],
+  groupSharing: false,
   groupMembers: [],
   groupTasks: [],
   settings: { notifications: true, darkTheme: false, language: 'ru' },
@@ -85,6 +87,7 @@ type Store = {
   saveMood: (mood: MoodValue, note: string) => Promise<boolean>
   addNote: (note: Omit<Note, 'id'>) => Promise<boolean>
   toggleMember: (id: string) => void
+  setGroupSharing: (enabled: boolean) => Promise<boolean>
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
   reset: () => void
 }
@@ -110,6 +113,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (active) {
             setState((current) => ({
               ...current,
+              groupSharing: true,
               groupMembers: MEMBERS,
               groupTasks: GROUP_TASKS,
             }))
@@ -148,6 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           moods: byWeekday(moods),
           notes,
           members: groupMembers.map((member) => String(member.id)),
+          groupSharing: me.group_sharing,
           groupMembers,
           groupTasks,
           settings: { ...current.settings, notifications: me.reminders_on },
@@ -283,6 +288,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const setGroupSharing = useCallback(async (enabled: boolean) => {
+    try {
+      if (connection === 'online') {
+        await api.setGroupSharing(enabled)
+        if (!enabled) {
+          setState((s) => ({
+            ...s,
+            groupSharing: false,
+            members: [],
+            groupMembers: [],
+            groupTasks: [],
+          }))
+          return true
+        }
+
+        const groupMembers = await api.getGroupMembers()
+        const owners = new Map(groupMembers.map((member) => [Number(member.id), member.name]))
+        const groupTasks = await api.getGroupTasks(owners)
+        setState((s) => ({
+          ...s,
+          groupSharing: true,
+          members: groupMembers.map((member) => String(member.id)),
+          groupMembers,
+          groupTasks,
+        }))
+        return true
+      }
+
+      if (connection === 'demo') {
+        setState((s) => ({
+          ...s,
+          groupSharing: enabled,
+          members: enabled ? MEMBERS.map((member) => String(member.id)) : [],
+          groupMembers: enabled ? MEMBERS : [],
+          groupTasks: enabled ? GROUP_TASKS : [],
+        }))
+        return true
+      }
+
+      throw new Error('Групповой доступ доступен после входа через MAX.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось изменить общий доступ.')
+      return false
+    }
+  }, [connection])
+
   const setSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     void (async () => {
       try {
@@ -356,6 +407,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveMood,
     addNote,
     toggleMember,
+    setGroupSharing,
     setSetting,
     reset,
   }

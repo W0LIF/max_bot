@@ -152,6 +152,18 @@ func (s *MemoryStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 	return nil
 }
 
+func (s *MemoryStore) ResetTaskReminderSent(_ context.Context, taskID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return ErrTaskNotFound
+	}
+	t.ReminderSent = false
+	return nil
+}
+
 // sortTasks — сначала Important, потом Urgent, потом по Deadline.
 func sortTasks(tasks []Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {

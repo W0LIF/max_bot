@@ -72,6 +72,7 @@ func New(store storage.Store, notifier Notifier) http.Handler {
 
 	protected.HandleFunc("GET /api/group/members", handleGroupMembers(store))
 	protected.HandleFunc("GET /api/group/tasks", handleGroupTasks(store))
+	protected.HandleFunc("POST /api/group/sharing", handleGroupSharing(store))
 
 	protected.HandleFunc("POST /api/tasks/scan", handleScan())
 	protected.HandleFunc("POST /api/feedback", handleFeedback(store))

@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -195,18 +196,42 @@ func TestRouter_ConsentAndReminders(t *testing.T) {
 	}
 }
 
-func TestRouter_Me_AutoGroup(t *testing.T) {
+func TestRouter_GroupSharingRequiresOptIn(t *testing.T) {
 	router, initData, store := newTestRouter(t)
 
 	_ = do(router, http.MethodGet, "/api/me", initData, "")
 
-	// После /api/me пользователь должен быть в демо-группе.
-	gid, err := store.GetUserGroup(t.Context(), 42)
-	if err != nil {
-		t.Fatalf("пользователь не в группе: %v", err)
+	if _, err := store.GetUserGroup(t.Context(), 42); !errors.Is(err, storage.ErrGroupNotFound) {
+		t.Fatalf("новый пользователь не должен автоматически попадать в группу, err=%v", err)
 	}
-	if gid != storage.DemoGroupID {
-		t.Fatalf("ожидали группу %d, получили %d", storage.DemoGroupID, gid)
+
+	if err := store.SaveUser(t.Context(), &storage.User{ID: 43, Name: "Не поделился"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range []*storage.Task{
+		{UserID: 42, Title: "Общая задача", Deadline: time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC), Status: storage.TaskNew},
+		{UserID: 43, Title: "Личная задача", Deadline: time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC), Status: storage.TaskNew},
+	} {
+		if _, err := store.CreateTask(t.Context(), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := do(router, http.MethodPost, "/api/group/sharing", initData, `{"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("включение общего доступа: ожидали 200, получили %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rec = do(router, http.MethodGet, "/api/group/tasks", initData, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Общая задача") || strings.Contains(rec.Body.String(), "Личная задача") {
+		t.Fatalf("ожидались только задачи согласившихся участников: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = do(router, http.MethodPost, "/api/group/sharing", initData, `{"enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("отключение общего доступа: ожидали 200, получили %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := store.GetUserGroup(t.Context(), 42); !errors.Is(err, storage.ErrGroupNotFound) {
+		t.Fatalf("после отключения пользователь должен выйти из группы, err=%v", err)
 	}
 }
 
@@ -492,8 +517,12 @@ func TestRouter_GroupMembers_EmptyBeforeMe(t *testing.T) {
 func TestRouter_GroupMembers_AfterMe(t *testing.T) {
 	router, initData, _ := newTestRouter(t)
 
-	// Прогреваем /api/me — пользователь попадает в демо-группу.
+	// Создаём пользователя, затем явно соглашаемся на общий доступ.
 	_ = do(router, http.MethodGet, "/api/me", initData, "")
+	joined := do(router, http.MethodPost, "/api/group/sharing", initData, `{"enabled":true}`)
+	if joined.Code != http.StatusOK {
+		t.Fatalf("включение общего доступа: ожидали 200, получили %d", joined.Code)
+	}
 
 	rec := do(router, http.MethodGet, "/api/group/members", initData, "")
 	if rec.Code != http.StatusOK {

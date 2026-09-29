@@ -121,9 +121,10 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 
 CREATE TABLE IF NOT EXISTS group_members (
-	user_id   INTEGER NOT NULL,
-	group_id  INTEGER NOT NULL,
-	joined_at TIMESTAMP NOT NULL,
+	user_id         INTEGER NOT NULL,
+	group_id        INTEGER NOT NULL,
+	joined_at       TIMESTAMP NOT NULL,
+	sharing_consent INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (user_id, group_id)
 );
 
@@ -146,6 +147,9 @@ CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
 		return err
 	}
 	if err := s.ensureColumn("users", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("group_members", "sharing_consent", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	return nil
@@ -351,6 +355,31 @@ func (s *SQLiteStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 		return err
 	}
 	return ErrReminderAlreadySent
+}
+
+func (s *SQLiteStore) ResetTaskReminderSent(ctx context.Context, taskID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE tasks SET reminder_sent = 0 WHERE id = ?`, taskID)
+	if err != nil {
+		return err
+	}
+	updated, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated > 0 {
+		return nil
+	}
+
+	var exists int
+	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM tasks WHERE id = ?`, taskID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTaskNotFound
+	}
+	return err
 }
 
 // --- helpers ---

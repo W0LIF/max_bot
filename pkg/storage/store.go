@@ -31,6 +31,7 @@ type Store interface {
 	// до before и ReminderSent=false. Для шедулера, не для API.
 	GetTasksDueBefore(ctx context.Context, before time.Time) ([]Task, error)
 	SetTaskReminderSent(ctx context.Context, taskID int64) error
+	ResetTaskReminderSent(ctx context.Context, taskID int64) error
 
 	// Moods
 	CreateMood(ctx context.Context, m *Mood) (int64, error)
@@ -46,6 +47,7 @@ type Store interface {
 
 	// Groups
 	EnsureGroup(ctx context.Context, userID, groupID int64) error
+	LeaveGroups(ctx context.Context, userID int64) error
 	GetUserGroup(ctx context.Context, userID int64) (int64, error)
 	GetGroupMembers(ctx context.Context, groupID int64) ([]Member, error)
 }

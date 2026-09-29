@@ -1,0 +1,85 @@
+schema_version: 1
+solution: Telescope
+base_url: https://max-bot-sable.vercel.app
+authentication:
+  header: X-Max-Init-Data
+  value_from_env: MAX_TEST_INIT_DATA
+  note: >-
+    Obtain fresh initData by opening the deployed mini-app using a MAX test account.
+    initData expires; never commit a live value or bot token.
+test_accounts:
+  - role: student
+    access: MAX test account that can open the deployed mini-app
+    credentials: Provided to evaluators through the protected submission channel
+sample_data:
+  note: Create test records through the API; the persistent database is not pre-seeded.
+  task:
+    title: API contract test
+    subject: Informatics
+    deadline: '2030-01-01T12:00:00Z'
+    urgent: true
+    important: true
+required_checks:
+  - id: validate-max-init-data
+    purpose: Validate the test account session
+    method: POST
+    path: /api/auth/validate
+    role: student
+    headers:
+      Content-Type: application/json
+    request:
+      initData: ${MAX_TEST_INIT_DATA}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [ok, user.id, user.name]
+  - id: get-profile
+    method: GET
+    path: /api/me
+    role: student
+    headers:
+      X-Max-Init-Data: ${MAX_TEST_INIT_DATA}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [id, name, consent, onboarded, reminders_on, group_sharing]
+  - id: create-task
+    method: POST
+    path: /api/tasks
+    role: student
+    headers:
+      Content-Type: application/json
+      X-Max-Init-Data: ${MAX_TEST_INIT_DATA}
+    request:
+      title: API contract test
+      subject: Informatics
+      deadline: '2030-01-01T12:00:00Z'
+      urgent: true
+      important: true
+    expected_status_codes: [201]
+    expected_response:
+      content_type: application/json
+      required_fields: [id, user_id, title, subject, deadline, urgent, important, status]
+  - id: list-tasks
+    method: GET
+    path: /api/tasks
+    role: student
+    headers:
+      X-Max-Init-Data: ${MAX_TEST_INIT_DATA}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      item_fields: [id, title, subject, deadline, status]
+  - id: opt-in-group-sharing
+    method: POST
+    path: /api/group/sharing
+    role: student
+    headers:
+      Content-Type: application/json
+      X-Max-Init-Data: ${MAX_TEST_INIT_DATA}
+    request:
+      enabled: true
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [enabled]
