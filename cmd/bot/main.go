@@ -45,7 +45,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Не удалось получить информацию о боте: %v", err)
 	}
-	fmt.Printf("Бот запущен: %s (ID: %d, Username: %s)\n", botInfo.Name, botInfo.UserId, botInfo.Username)
+	fmt.Printf("Бот запущен: %s (ID: %d, Username: %s)\n",
+		botInfo.Name, botInfo.UserId, botInfo.Username)
 
 	// --- Хранилище ---
 	dbPath := os.Getenv("DB_PATH")
@@ -56,6 +57,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Не удалось открыть БД %q: %v", dbPath, err)
 	}
+	defer store.Close()
 	log.Printf("Хранилище готово: %s", dbPath)
 
 	// --- Шедулер напоминаний ---
@@ -70,6 +72,15 @@ func main() {
 	go scheduler.Run(ctx)
 	log.Println("Шедулер напоминаний запущен")
 
+	// --- Читатель канала напоминаний (B6) ---
+	//
+	// Без этого цикла scheduler.Run блокируется на отправке в канал,
+	// и напоминания не уходят ни разу. Фильтр reminders_on — здесь,
+	// сам шедулер его не смотрит.
+	go runRemindersConsumer(ctx, store, api, remindersOut)
+	log.Println("Читатель напоминаний запущен")
+
+	// --- Ошибки MAX API ---
 	go func() {
 		for errMessage := range api.GetErrors() {
 			log.Println(errMessage)

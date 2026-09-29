@@ -136,12 +136,11 @@ func (b *Bot) handleHello(ctx context.Context, upd *schemes.MessageCreatedUpdate
 // --- Обработка нажатий на кнопки ---
 
 func (b *Bot) onCallback(ctx context.Context, upd *schemes.MessageCallbackUpdate) {
-
 	_, err := b.api.Messages.AnswerOnCallback(
 		ctx,
-		upd.Callback.CallbackID, // ID колбэка из апдейта
+		upd.Callback.CallbackID,
 		&schemes.CallbackAnswer{
-			Notification: "Принято", // Показываем всплывающее уведомление
+			Notification: "Принято",
 		},
 	)
 	if err != nil {
@@ -291,37 +290,47 @@ func (b *Bot) sendPhotoFromFile(ctx context.Context, userID int64, filePath stri
 
 // --- Webhook ---
 
-// HandleWebhook — обработчик webhook от MAX (маршрут /api/webhook).
+// HandleWebhook — конструктор обработчика webhook от MAX
+// (маршрут /api/webhook).
 //
-// Внимание: на Vercel каждый запрос создаёт новый Store в памяти, поэтому
-// онбординг между запросами не сохраняется. Общая задача №4 из распределения.
-func HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	token := os.Getenv("MAX_BOT_TOKEN")
-	if token == "" {
-		log.Println("MAX_BOT_TOKEN не задан")
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
+// Стор передаётся снаружи — чтобы состояние пользователя сохранялось
+// между запросами. Раньше здесь создавался NewMemoryStore() на каждый
+// запрос, и онбординг терялся (B0 в Этапе 2).
+//
+// Использование:
+//
+//	mux.HandleFunc("POST /api/webhook", bot.HandleWebhook(store))
+func HandleWebhook(store storage.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := os.Getenv("MAX_BOT_TOKEN")
+		if token == "" {
+			log.Println("MAX_BOT_TOKEN не задан")
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
+		api, err := NewAPIClient(token)
+		if err != nil {
+			log.Printf("Ошибка инициализации бота: %v", err)
+			http.Error(w, "Internal error", http.StatusInternalServerError)
+			return
+		}
+
+		b := New(api, store)
+
+		secret := os.Getenv("MAX_BOT_API_SECRET")
+
+		api.GetUpdateHandlerFunc(func(update schemes.UpdateInterface) {
+			b.Dispatch(r.Context(), update)
+			w.WriteHeader(http.StatusOK)
+		}, secret)(w, r)
 	}
-
-	api, err := NewAPIClient(token)
-	if err != nil {
-		log.Printf("Ошибка инициализации бота: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
-	b := New(api, storage.NewMemoryStore())
-
-	secret := os.Getenv("MAX_BOT_API_SECRET")
-
-	api.GetUpdateHandlerFunc(func(update schemes.UpdateInterface) {
-		b.Dispatch(r.Context(), update)
-		w.WriteHeader(http.StatusOK)
-	}, secret)(w, r)
 }
 
-// --- Проверка initData мини-приложения (маршрут /api/validate) ---
+// --- Проверка initData мини-приложения (legacy-маршрут /api/validate) ---
 
+// HandleValidate — старый отладочный эндпоинт. Оставлен для обратной
+// совместимости и для App.tsx, пока фронт не перейдёт на /api/auth/validate.
 func HandleValidate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
