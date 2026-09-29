@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -41,9 +43,22 @@ func (b *Bot) Dispatch(ctx context.Context, update schemes.UpdateInterface) {
 func (b *Bot) onMessage(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
 	userID := upd.Message.Sender.UserId
 	text := strings.TrimSpace(upd.Message.Body.Text)
+	lowerText := strings.ToLower(text)
 
 	if text == "/start" || strings.EqualFold(text, "start") {
 		b.handleStart(ctx, upd)
+		return
+	}
+
+	// Обработка "привет" — отвечаем приветствием и показываем картинку
+	if lowerText == "привет" {
+		b.handleHello(ctx, upd)
+		return
+	}
+
+	// Обработка "меню" — показываем главное меню
+	if lowerText == "меню" {
+		b.reply(ctx, upd, "Главное меню:", kbMainMenu())
 		return
 	}
 
@@ -85,12 +100,37 @@ func (b *Bot) handleStart(ctx context.Context, upd *schemes.MessageCreatedUpdate
 
 	b.reply(ctx, upd,
 		"Привет! Я помогу следить за дедлайнами и не выгореть.\n\n"+
+			"Доступные команды:\n"+
+			"• /start — начать работу с ботом\n"+
+			"• привет — поздороваться и увидеть картинку\n"+
+			"• меню — открыть главное меню\n\n"+
 			"Согласны на обработку данных?",
 		kbConsent())
 }
 
 func (b *Bot) fallback(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
 	b.reply(ctx, upd, "Не понял. Вот меню:", kbMainMenu())
+}
+
+// handleHello — обработка приветствия с отправкой картинки.
+func (b *Bot) handleHello(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
+	userID := upd.Message.Sender.UserId
+
+	// Сначала отправляем текстовое приветствие
+	b.sendToUser(ctx, userID, "Привет! 👋", nil)
+
+	// Затем отправляем картинку
+	// Используем hero.png из frontend assets
+	imagePath := filepath.Join("frontend", "src", "assets", "hero.png")
+	if err := b.sendPhotoFromFile(ctx, userID, imagePath); err != nil {
+		log.Printf("send photo error: %v", err)
+		// Если не получилось отправить картинку, просто показываем меню
+		b.sendToUser(ctx, userID, "Вот главное меню:", kbMainMenu())
+		return
+	}
+
+	// После картинки показываем меню
+	b.sendToUser(ctx, userID, "Что делаем?", kbMainMenu())
 }
 
 // --- Обработка нажатий на кнопки ---
@@ -215,6 +255,38 @@ func (b *Bot) sendToChat(ctx context.Context, chatID int64, text string, kb *max
 	if err := b.api.Messages.Send(ctx, msg); err != nil {
 		log.Printf("send to chat %d error: %v", chatID, err)
 	}
+}
+
+// sendPhotoFromFile загружает и отправляет фото из файла.
+func (b *Bot) sendPhotoFromFile(ctx context.Context, userID int64, filePath string) error {
+	// Проверяем существование файла
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("file not found: %s", filePath)
+	}
+
+	// Загружаем фото на сервер MAX
+	photoTokens, err := b.api.Uploads.UploadPhotoFromFile(ctx, filePath)
+	if err != nil {
+		return fmt.Errorf("upload photo: %w", err)
+	}
+
+	// Получаем первый токен фото
+	var token string
+	for _, pt := range photoTokens.Photos {
+		token = pt.Token
+		break
+	}
+	if token == "" {
+		return fmt.Errorf("no photo token received")
+	}
+
+	// Отправляем сообщение с фото
+	msg := maxbot.NewMessage().SetUser(userID).AddPhotoByToken(token)
+	if err := b.api.Messages.Send(ctx, msg); err != nil {
+		return fmt.Errorf("send photo message: %w", err)
+	}
+
+	return nil
 }
 
 // --- Webhook ---
