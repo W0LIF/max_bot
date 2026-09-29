@@ -67,6 +67,11 @@ export function HomeScreen() {
   const { user, todayTasks, load, progress, mood, toggleTask } = useStore()
   const overloaded = load >= 3
   const date = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
+  const toggleTodayTask = async (task: Task) => {
+    const wasActive = task.status !== 'done'
+    const saved = await toggleTask(task.id)
+    if (saved && wasActive) push('mood-check')
+  }
 
   return (
     <div className="screen screen--padded">
@@ -118,11 +123,11 @@ export function HomeScreen() {
 
       <div className="stack" style={{ gap: 10 }}>
         {todayTasks.map((task) => (
-          <TaskCard key={task.id} task={task} onToggle={() => toggleTask(task.id)} />
+          <TaskCard key={task.id} task={task} onToggle={() => void toggleTodayTask(task)} />
         ))}
         {todayTasks.length === 0 && (
           <Card tone="cream">
-            <p className="body">Всё сделано — можно выдохнуть.</p>
+            <p className="body">На сегодня задач нет.</p>
           </Card>
         )}
       </div>

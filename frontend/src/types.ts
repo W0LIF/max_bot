@@ -113,6 +113,17 @@ export function parseDeadline(raw: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed)
 }
 
+export function deadlineToDateTimeLocal(raw: string): string {
+  const date = parseDeadline(raw)
+  if (!date) return ''
+
+  const time = raw.match(/(\d{1,2}):(\d{2})/)
+  if (time) date.setHours(Number(time[1]), Number(time[2]), 0, 0)
+
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
 /** Просрочка: срок раньше сегодняшнего дня и задача не выполнена. */
 export function isOverdue(task: Task): boolean {
   if (task.status === 'done') return false

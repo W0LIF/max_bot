@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import { GROUP_TASKS, INITIAL_TASKS, MEMBERS, MOOD_HISTORY, USER } from './data'
 import type { Member, MoodEntry, Note, Settings, Task, TaskStatus, UserProfile } from './types'
-import { sameId } from './types'
+import { parseDeadline, sameId } from './types'
 import type { MoodValue } from './ui/kit'
 import { api, ApiError } from './api'
 import { getInitData } from './webapp'
@@ -64,6 +64,7 @@ function loadState(): State {
 type Store = {
   state: State
   user: UserProfile
+  taskToEdit: Task | null
   connection: 'loading' | 'online' | 'demo' | 'open-max' | 'error'
   connectionMessage: string
   error: string | null
@@ -82,10 +83,14 @@ type Store = {
   authorize: () => void
   logout: () => void
   addTask: (task: Omit<Task, 'id' | 'status'>) => Promise<boolean>
-  toggleTask: (id: Task['id']) => void
+  setTaskToEdit: (task: Task | null) => void
+  updateTask: (task: Task & { deadline: string }) => Promise<boolean>
+  deleteTask: (id: Task['id']) => Promise<boolean>
+  toggleTask: (id: Task['id']) => Promise<boolean>
   setTaskStatus: (id: Task['id'], status: TaskStatus) => void
   saveMood: (mood: MoodValue, note: string) => Promise<boolean>
   addNote: (note: Omit<Note, 'id'>) => Promise<boolean>
+  deleteNote: (id: Note['id']) => Promise<boolean>
   toggleMember: (id: string) => void
   setGroupSharing: (enabled: boolean) => Promise<boolean>
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
@@ -94,12 +99,21 @@ type Store = {
 
 const StoreContext = createContext<Store | null>(null)
 
+function formatLocalDeadline(value: string): string {
+  const deadline = new Date(value)
+  if (Number.isNaN(deadline.getTime())) return value
+  const date = deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  const time = deadline.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return `${date} · ${time}`
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>(loadState)
   const [connection, setConnection] = useState<Store['connection']>('loading')
   const [connectionMessage, setConnectionMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<UserProfile>(USER)
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
   const [scanDraft, setScanDraft] = useState<Store['scanDraft']>(null)
 
   useEffect(() => {
@@ -202,7 +216,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       const created = connection === 'online'
         ? await api.createTask(task)
-        : { ...task, id: `t${Date.now()}`, status: 'new' as const }
+        : { ...task, deadline: formatLocalDeadline(task.deadline), id: `t${Date.now()}`, status: 'new' as const }
       setState((s) => ({ ...s, tasks: [created, ...s.tasks] }))
       return true
     } catch (cause) {
@@ -211,18 +225,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [connection])
 
-  const toggleTask = useCallback((id: Task['id']) => {
+  const updateTask = useCallback(async (task: Task & { deadline: string }) => {
+    try {
+      const updated = connection === 'online'
+        ? await api.updateTask(task)
+        : { ...task, deadline: formatLocalDeadline(task.deadline) }
+      setState((s) => ({ ...s, tasks: s.tasks.map((item) => sameId(item.id, task.id) ? updated : item) }))
+      setTaskToEdit(null)
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось обновить задачу.')
+      return false
+    }
+  }, [connection])
+
+  const deleteTask = useCallback(async (id: Task['id']) => {
+    try {
+      if (connection === 'online') await api.deleteTask(id)
+      setState((s) => ({ ...s, tasks: s.tasks.filter((task) => !sameId(task.id, id)) }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось удалить задачу.')
+      return false
+    }
+  }, [connection])
+
+  const toggleTask = useCallback(async (id: Task['id']) => {
     const task = state.tasks.find((item) => sameId(item.id, id))
-    if (!task) return
+    if (!task) return false
     const status = task.status === 'done' ? 'new' : 'done'
-    void (async () => {
-      try {
-        const updated: Task = connection === 'online' ? await api.setTaskStatus(id, status) : { ...task, status }
-        setState((s) => ({ ...s, tasks: s.tasks.map((item) => sameId(item.id, id) ? updated : item) }))
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Не удалось изменить задачу.')
-      }
-    })()
+    try {
+      const updated: Task = connection === 'online' ? await api.setTaskStatus(id, status) : { ...task, status }
+      setState((s) => ({ ...s, tasks: s.tasks.map((item) => sameId(item.id, id) ? updated : item) }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось изменить задачу.')
+      return false
+    }
   }, [connection, state.tasks])
 
   const setTaskStatus = useCallback((id: Task['id'], status: TaskStatus) => {
@@ -277,6 +316,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить заметку.')
+      return false
+    }
+  }, [connection])
+
+  const deleteNote = useCallback(async (id: Note['id']) => {
+    try {
+      if (connection === 'online') await api.deleteNote(id)
+      setState((s) => ({ ...s, notes: s.notes.filter((note) => !sameId(note.id, id)) }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось удалить заметку.')
       return false
     }
   }, [connection])
@@ -372,7 +422,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const dismissError = useCallback(() => setError(null), [])
 
   const derived = useMemo(() => {
-    const todayTasks = state.tasks.filter((t) => t.status !== 'done').slice(0, 4)
+    const today = new Date().toDateString()
+    const todayTasks = state.tasks.filter((task) =>
+      task.status !== 'done' && parseDeadline(task.deadline)?.toDateString() === today,
+    ).slice(0, 4)
     const done = state.tasks.filter((t) => t.status === 'done').length
     const progress = state.tasks.length ? Math.round((done / state.tasks.length) * 100) : 0
     const last = state.moods[state.moods.length - 1]
@@ -381,7 +434,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       todayTasks,
       done,
       progress,
-      load: Math.min(3, todayTasks.length > 2 ? 3 : Math.max(1, todayTasks.length)),
+      load: Math.min(3, todayTasks.length),
       mood: (todayEntry?.mood ?? last?.mood ?? 'good') as MoodValue,
     }
   }, [state.tasks, state.moods])
@@ -389,6 +442,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value: Store = {
     state,
     user,
+    taskToEdit,
     connection,
     connectionMessage,
     error,
@@ -402,10 +456,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authorize,
     logout,
     addTask,
+    setTaskToEdit,
+    updateTask,
+    deleteTask,
     toggleTask,
     setTaskStatus,
     saveMood,
     addNote,
+    deleteNote,
     toggleMember,
     setGroupSharing,
     setSetting,

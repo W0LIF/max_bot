@@ -14,6 +14,7 @@ export type ScreenId =
   | 'map'
   | 'menu'
   | 'add-task'
+  | 'edit-task'
   | 'scan'
   | 'mood-check'
   | 'note'

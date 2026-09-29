@@ -4,44 +4,53 @@ import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
 import { STATUS_META, SUBJECTS, PRIORITY_META } from '../data'
-import { isOverdue, parseDeadline, type Priority, type TaskStatus } from '../types'
+import { deadlineToDateTimeLocal, isOverdue, parseDeadline, type Priority, type Task, type TaskStatus } from '../types'
 import { TaskCard } from './home'
 
 /* 6-7. Добавить задачу вручную / по фото */
 export function AddTaskScreen() {
-  const { back, push } = useNav()
-  const { addTask, scanDraft, setScanDraft } = useStore()
+  const { back, push, screen } = useNav()
+  const { addTask, updateTask, taskToEdit, setTaskToEdit, scanDraft, setScanDraft } = useStore()
+  const editing = screen === 'edit-task' && taskToEdit !== null
   const [mode, setMode] = useState<'manual' | 'photo'>('manual')
-  const [title, setTitle] = useState(scanDraft?.title ?? '')
-  const [subject, setSubject] = useState(scanDraft?.subject ?? SUBJECTS[0])
-  const [deadline, setDeadline] = useState(scanDraft?.deadline ?? '')
-  const [priority, setPriority] = useState<Priority>('important')
+  const [title, setTitle] = useState(taskToEdit?.title ?? scanDraft?.title ?? '')
+  const [subject, setSubject] = useState(taskToEdit?.subject ?? scanDraft?.subject ?? SUBJECTS[0])
+  const [deadline, setDeadline] = useState(
+    taskToEdit ? deadlineToDateTimeLocal(taskToEdit.deadline) : scanDraft?.deadline ?? '',
+  )
+  const [priority, setPriority] = useState<Priority>(taskToEdit?.priority ?? 'important')
 
   const submit = async () => {
     if (!title.trim()) return
-    const saved = await addTask({
+    const fields = {
       title: title.trim(),
       subject,
       deadline: deadline.trim(),
       priority,
-    })
+    }
+    const saved = editing && taskToEdit
+      ? await updateTask({ ...taskToEdit, ...fields })
+      : await addTask(fields)
     if (!saved) return
+    setTaskToEdit(null)
     setScanDraft(null)
     back()
   }
 
   return (
     <div className="screen">
-      <Segmented
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: 'manual', label: 'Вручную' },
-          { value: 'photo', label: 'По фото' },
-        ]}
-      />
+      {!editing && (
+        <Segmented
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'manual', label: 'Вручную' },
+            { value: 'photo', label: 'По фото' },
+          ]}
+        />
+      )}
 
-      {mode === 'photo' && (
+      {!editing && mode === 'photo' && (
         <button type="button" className="dropzone" onClick={() => push('scan')}>
           <span className="dropzone__icon">
             <Icon name="camera" size={30} />
@@ -99,23 +108,25 @@ export function AddTaskScreen() {
         </div>
       </Field>
 
-      <div className="upload-row">
-        <span className="upload-preview">
-          <Icon name="doc" size={22} />
-        </span>
-        <span className="stack grow">
-          <span className="h3">Файл или фото</span>
-          <span className="caption">Необязательно</span>
-        </span>
-        <button type="button" className="icon-button" onClick={() => push('scan')} aria-label="Камера">
-          <Icon name="camera" size={18} />
-        </button>
-      </div>
+      {!editing && (
+        <div className="upload-row">
+          <span className="upload-preview">
+            <Icon name="doc" size={22} />
+          </span>
+          <span className="stack grow">
+            <span className="h3">Файл или фото</span>
+            <span className="caption">Необязательно</span>
+          </span>
+          <button type="button" className="icon-button" onClick={() => push('scan')} aria-label="Камера">
+            <Icon name="camera" size={18} />
+          </button>
+        </div>
+      )}
 
       <div className="screen__spacer" />
 
       <Button disabled={!title.trim() || !deadline} onClick={submit}>
-        Добавить
+        {editing ? 'Сохранить' : 'Добавить'}
       </Button>
     </div>
   )
@@ -192,8 +203,9 @@ export function ScanScreen() {
 /* Список всех задач с фильтром по состоянию */
 export function TasksScreen() {
   const { push } = useNav()
-  const { state, toggleTask } = useStore()
+  const { state, toggleTask, setTaskToEdit, deleteTask } = useStore()
   const [filter, setFilter] = useState<'all' | TaskStatus | 'overdue'>('all')
+  const [taskPendingDelete, setTaskPendingDelete] = useState<Task | null>(null)
 
   /* «Просрочено» — не статус, а вычисляемый признак по deadline. */
   const tasks =
@@ -209,6 +221,11 @@ export function TasksScreen() {
     { value: 'done', label: 'Готово' },
     { value: 'overdue', label: 'Просрочено' },
   ]
+  const toggleListedTask = async (task: Task) => {
+    const wasActive = task.status !== 'done'
+    const saved = await toggleTask(task.id)
+    if (saved && wasActive) push('mood-check')
+  }
 
   return (
     <div className="screen screen--padded">
@@ -225,9 +242,40 @@ export function TasksScreen() {
         ))}
       </div>
 
+      {taskPendingDelete && (
+        <Card tone="cream">
+          <div className="row-between">
+            <span className="body">Удалить «{taskPendingDelete.title}»?</span>
+            <span className="task-card__actions">
+              <Button size="sm" variant="ghost" onClick={() => setTaskPendingDelete(null)}>Отмена</Button>
+              <Button size="sm" onClick={async () => {
+                if (await deleteTask(taskPendingDelete.id)) setTaskPendingDelete(null)
+              }}>Удалить</Button>
+            </span>
+          </div>
+        </Card>
+      )}
+
       <div className="stack" style={{ gap: 10 }}>
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onToggle={() => toggleTask(task.id)} />
+          <TaskCard
+            key={task.id}
+            task={task}
+            onToggle={() => void toggleListedTask(task)}
+            right={(
+              <span className="task-card__actions">
+                <button type="button" className="icon-button" title="Изменить задачу" aria-label="Изменить задачу" onClick={() => {
+                  setTaskToEdit(task)
+                  push('edit-task')
+                }}>
+                  <Icon name="edit" size={17} />
+                </button>
+                <button type="button" className="icon-button task-card__delete" title="Удалить задачу" aria-label="Удалить задачу" onClick={() => setTaskPendingDelete(task)}>
+                  <Icon name="trash" size={17} />
+                </button>
+              </span>
+            )}
+          />
         ))}
         {tasks.length === 0 && <Card tone="cream">Нет задач в этом статусе.</Card>}
       </div>
@@ -242,7 +290,7 @@ export function TasksScreen() {
 /* 11. Календарь */
 export function CalendarScreen() {
   const { push } = useNav()
-  const { state, done } = useStore()
+  const { state, done, deleteNote } = useStore()
   const [offset, setOffset] = useState(0)
 
   const { cells, monthTitle } = useMemo(() => {
@@ -334,7 +382,7 @@ export function CalendarScreen() {
         {todayTasks.length === 0 && <p className="caption">На сегодня задач нет.</p>}
       </div>
 
-      <SectionTitle>Напоминания</SectionTitle>
+      <SectionTitle>Активные задачи</SectionTitle>
       <div className="list">
         {reminders.map((reminder) => (
           <div className="row" key={reminder.id}>
@@ -359,6 +407,9 @@ export function CalendarScreen() {
                 {note.allDay ? 'Весь день' : `${formatNoteTime(note.start)} — ${formatNoteTime(note.end)}`}
               </span>
             </span>
+            <button type="button" className="icon-button task-card__delete" aria-label={`Удалить заметку: ${note.text}`} title="Удалить заметку" onClick={() => void deleteNote(note.id)}>
+              <Icon name="trash" size={17} />
+            </button>
           </div>
         ))}
       </div>

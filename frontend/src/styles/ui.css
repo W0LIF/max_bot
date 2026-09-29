@@ -351,6 +351,7 @@
 /* ——— Строки списка ——— */
 .list {
   display: flex;
+  flex: none;
   flex-direction: column;
   overflow: hidden;
   background: #fff;

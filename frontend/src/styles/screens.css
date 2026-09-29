@@ -140,6 +140,17 @@
   color: var(--muted);
 }
 
+.task-card__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-card__delete {
+  color: var(--st-overdue);
+}
+
 .dropzone {
   display: flex;
   flex-direction: column;

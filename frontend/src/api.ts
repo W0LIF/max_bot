@@ -151,6 +151,23 @@ export const api = {
     })
     return mapTask(created)
   },
+  updateTask: async (task: Task & { deadline: string }) => {
+    const deadline = new Date(task.deadline)
+    if (Number.isNaN(deadline.getTime())) throw new ApiError('Укажите корректный срок задачи.', 400)
+    const updated = await request<ApiTask>(`/tasks/${encodeURIComponent(String(task.id))}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: task.title,
+        subject: task.subject,
+        deadline: deadline.toISOString(),
+        urgent: task.priority === 'urgent_important' || task.priority === 'urgent',
+        important: task.priority === 'urgent_important' || task.priority === 'important',
+      }),
+    })
+    return mapTask(updated)
+  },
+  deleteTask: (id: Task['id']) =>
+    request<void>(`/tasks/${encodeURIComponent(String(id))}`, { method: 'DELETE' }),
   setTaskStatus: async (id: Task['id'], status: TaskStatus) => {
     const updated = await request<ApiTask>(`/tasks/${encodeURIComponent(String(id))}`, {
       method: 'PATCH',

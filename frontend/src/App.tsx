@@ -13,6 +13,7 @@ import { FeedbackScreen, HelpScreen, MenuScreen, SettingsScreen } from './screen
 /** Заголовок для вторичных экранов (вкладки показывают его внутри себя). */
 const TITLES: Partial<Record<ScreenId, string>> = {
   'add-task': 'Добавить задачу',
+  'edit-task': 'Изменить задачу',
   scan: 'Добавить задачу',
   note: 'Заметка',
   'mood-check': 'Отметка состояния',
@@ -47,11 +48,15 @@ function StatusBar() {
 
 function ScreenHeader() {
   const { screen, isTab, canGoBack, back } = useNav()
+  const { setTaskToEdit } = useStore()
   if (isTab || !canGoBack) return null
 
   return (
     <div className="topbar">
-      <button type="button" className="icon-button" onClick={back} aria-label="Назад">
+      <button type="button" className="icon-button" onClick={() => {
+        if (screen === 'edit-task') setTaskToEdit(null)
+        back()
+      }} aria-label="Назад">
         <Icon name="back" size={18} />
       </button>
       <span className="topbar__title">{TITLES[screen] ?? 'Телескоп'}</span>
@@ -104,6 +109,8 @@ function CurrentScreen() {
     case 'menu':
       return <MenuScreen />
     case 'add-task':
+      return <AddTaskScreen />
+    case 'edit-task':
       return <AddTaskScreen />
     case 'scan':
       return <ScanScreen />
