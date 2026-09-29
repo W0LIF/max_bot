@@ -42,14 +42,20 @@ func (b *Bot) Dispatch(ctx context.Context, update schemes.UpdateInterface) {
 
 func (b *Bot) onMessage(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
 	userID := upd.Message.Sender.UserId
+	user, isNew, err := loadOrCreateBotUser(ctx, b.store, userID)
+	if err != nil {
+		log.Printf("load user %d: %v", userID, err)
+		b.reply(ctx, upd, "Не удалось открыть профиль. Попробуй ещё раз позже.", nil)
+		return
+	}
+	if isNew || !user.Consent {
+		b.reply(ctx, upd, consentPrompt(isNew), kbConsent())
+		return
+	}
+
 	text := strings.TrimSpace(upd.Message.Body.Text)
 	if text == "" {
 		if audioURL := audioAttachmentURL(upd.Message.Body.Attachments); audioURL != "" {
-			user, err := b.store.GetUser(ctx, userID)
-			if err != nil || !user.Consent {
-				b.reply(ctx, upd, "Для распознавания голоса нужно согласие на обработку данных. Подтверди его кнопкой:", kbConsent())
-				return
-			}
 			if b.speechKit == nil {
 				b.sendToUser(ctx, userID, "Распознавание голоса пока не настроено.", nil)
 				return
@@ -107,30 +113,30 @@ func (b *Bot) onMessage(ctx context.Context, upd *schemes.MessageCreatedUpdate) 
 
 // handleStart — приветствие и онбординг.
 func (b *Bot) handleStart(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
-	userID := upd.Message.Sender.UserId
+	b.reply(ctx, upd, "С возвращением! Что делаем?", kbMainMenu())
+}
 
-	// Если пользователь уже в хранилище — сразу меню.
-	if _, err := b.store.GetUser(ctx, userID); err == nil {
-		b.reply(ctx, upd, "С возвращением! Что делаем?", kbMainMenu())
-		return
+func loadOrCreateBotUser(ctx context.Context, store storage.Store, userID int64) (*storage.User, bool, error) {
+	user, err := store.GetUser(ctx, userID)
+	if err == nil {
+		return user, false, nil
+	}
+	if !errors.Is(err, storage.ErrUserNotFound) {
+		return nil, false, err
 	}
 
-	// Нового — сохраняем, иначе SetConsent/SetReminders не найдут его.
-	if err := b.store.SaveUser(ctx, &storage.User{
-		ID:          userID,
-		OnboardedAt: time.Now(),
-	}); err != nil {
-		log.Printf("SaveUser: %v", err)
+	user = &storage.User{ID: userID, OnboardedAt: time.Now()}
+	if err := store.SaveUser(ctx, user); err != nil {
+		return nil, false, err
 	}
+	return user, true, nil
+}
 
-	b.reply(ctx, upd,
-		"Привет! Я помогу следить за дедлайнами и не выгореть.\n\n"+
-			"Доступные команды:\n"+
-			"• /start — начать работу с ботом\n"+
-			"• привет — поздороваться и увидеть картинку\n"+
-			"• меню — открыть главное меню\n\n"+
-			"Согласны на обработку данных? Голосовые сообщения будут передаваться в Yandex SpeechKit для распознавания.",
-		kbConsent())
+func consentPrompt(isNew bool) string {
+	if isNew {
+		return "Привет! Я помогу следить за дедлайнами и настроением. Согласны на обработку данных? Голосовые сообщения будут передаваться в Yandex SpeechKit для распознавания."
+	}
+	return "Чтобы пользоваться задачами и напоминаниями, нужно согласие на обработку данных. Голосовые сообщения будут передаваться в Yandex SpeechKit для распознавания."
 }
 
 func (b *Bot) fallback(ctx context.Context, upd *schemes.MessageCreatedUpdate) {
@@ -174,11 +180,23 @@ func (b *Bot) onCallback(ctx context.Context, upd *schemes.MessageCallbackUpdate
 
 	userID := upd.Callback.User.UserId
 	payload := upd.Callback.Payload
+	user, isNew, userErr := loadOrCreateBotUser(ctx, b.store, userID)
+	if userErr != nil {
+		log.Printf("load user %d: %v", userID, userErr)
+		b.sendToUser(ctx, userID, "Не удалось открыть профиль. Попробуй ещё раз позже.", nil)
+		return
+	}
+	if (isNew || !user.Consent) && payload != CbConsentYes && payload != CbConsentNo {
+		b.sendToUser(ctx, userID, consentPrompt(isNew), kbConsent())
+		return
+	}
 
 	switch payload {
 	case CbConsentYes:
 		if err := b.store.SetConsent(ctx, userID, true); err != nil {
 			log.Printf("SetConsent: %v", err)
+			b.sendToUser(ctx, userID, "Не удалось сохранить согласие. Попробуй ещё раз.", kbConsent())
+			return
 		}
 		b.sendToUser(ctx, userID,
 			"Отлично! Присылать напоминания о дедлайнах?", kbReminders())
@@ -186,17 +204,31 @@ func (b *Bot) onCallback(ctx context.Context, upd *schemes.MessageCallbackUpdate
 	case CbConsentNo:
 		if err := b.store.SetConsent(ctx, userID, false); err != nil {
 			log.Printf("SetConsent: %v", err)
+			b.sendToUser(ctx, userID, "Не удалось сохранить выбор. Попробуй ещё раз.", kbConsent())
+			return
 		}
-		b.sendToUser(ctx, userID,
-			"Понял. Работаем в ограниченном режиме — персональные данные не сохраняем.", nil)
-		b.sendToUser(ctx, userID, "Что делаем?", kbMainMenu())
+		if err := b.store.SetReminders(ctx, userID, false); err != nil {
+			log.Printf("disable reminders for %d: %v", userID, err)
+		}
+		if err := b.store.LeaveGroups(ctx, userID); err != nil {
+			log.Printf("remove user %d from groups: %v", userID, err)
+		}
+		b.sendToUser(ctx, userID, "Понял. Чтобы запомнить выбор, я сохраню технический ID MAX и факт отказа. Без согласия задачи, настроение и голосовые сообщения обрабатываться не будут. Если передумаешь, отправь любое сообщение и выбери «Да».", nil)
 
 	case CbRemindYes:
-		_ = b.store.SetReminders(ctx, userID, true)
+		if err := b.store.SetReminders(ctx, userID, true); err != nil {
+			log.Printf("SetReminders: %v", err)
+			b.sendToUser(ctx, userID, "Не удалось сохранить настройку. Попробуй ещё раз.", kbReminders())
+			return
+		}
 		b.sendToUser(ctx, userID, "Готово! Буду напоминать о дедлайнах.", kbMainMenu())
 
 	case CbRemindNo:
-		_ = b.store.SetReminders(ctx, userID, false)
+		if err := b.store.SetReminders(ctx, userID, false); err != nil {
+			log.Printf("SetReminders: %v", err)
+			b.sendToUser(ctx, userID, "Не удалось сохранить настройку. Попробуй ещё раз.", kbReminders())
+			return
+		}
 		b.sendToUser(ctx, userID, "Ок, без напоминаний.", kbMainMenu())
 
 	case CbMenuAdd:
