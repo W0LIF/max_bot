@@ -145,6 +145,9 @@ func (s *MemoryStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 	if !ok {
 		return ErrTaskNotFound
 	}
+	if t.ReminderSent {
+		return ErrReminderAlreadySent
+	}
 	t.ReminderSent = true
 	return nil
 }

@@ -6,8 +6,8 @@ import (
 )
 
 // Store — общий интерфейс хранилища.
-// Реализуется SQLiteStore (прод) и MemoryStore (локальные тесты, webhook
-// в dev-режиме).
+// Реализуется SQLiteStore (локально SQLite, в проде локальный SQLite или
+// удалённый Turso через database/sql) и MemoryStore для тестов.
 //
 // Все методы, работающие с задачами/настроениями/заметками, фильтруют
 // по user_id. Исключение — SetTaskReminderSent и GetTasksDueBefore:

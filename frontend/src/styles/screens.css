@@ -438,6 +438,7 @@
 /* 15. Карта приключений */
 .map {
   position: relative;
+  flex: none;
   height: 520px;
   border-radius: var(--r-lg);
   overflow: hidden;
@@ -560,4 +561,34 @@
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
+}
+
+.scan-preview {
+  width: min(100%, 220px);
+  max-height: 210px;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+}
+
+:root[data-theme='dark'] .task-card,
+:root[data-theme='dark'] .dropzone--active,
+:root[data-theme='dark'] .dropzone,
+:root[data-theme='dark'] .balance__icon,
+:root[data-theme='dark'] .calendar__day:hover,
+:root[data-theme='dark'] .people__row:hover {
+  background: var(--paper);
+}
+
+:root[data-theme='dark'] .onboarding__shield--ok,
+:root[data-theme='dark'] .mood-option:nth-child(3) {
+  background: #35589d;
+}
+
+:root[data-theme='dark'] .map {
+  background: linear-gradient(180deg, #202a3d, #273149 60%, #303149);
+}
+
+:root[data-theme='dark'] .calendar__day--muted {
+  color: #8795ad;
 }

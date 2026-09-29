@@ -55,6 +55,8 @@ func New(store storage.Store, notifier Notifier) http.Handler {
 	protected := http.NewServeMux()
 
 	protected.HandleFunc("GET /api/me", handleMe(store))
+	protected.HandleFunc("POST /api/consent", handleConsent(store))
+	protected.HandleFunc("POST /api/me/reminders", handleReminders(store))
 
 	protected.HandleFunc("GET /api/tasks", handleTasksList(store))
 	protected.HandleFunc("POST /api/tasks", handleTaskCreate(store, notifier))

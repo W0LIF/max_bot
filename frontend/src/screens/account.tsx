@@ -4,6 +4,7 @@ import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
 import { FAQ } from '../data'
+import { closeWebApp } from '../webapp'
 
 /* 16. Меню */
 export function MenuScreen() {
@@ -22,7 +23,7 @@ export function MenuScreen() {
           <span className="stack grow">
             <span className="h2">{user.name}</span>
             <span className="caption">
-              {user.course}, {user.group}
+              {[user.course, user.group].filter(Boolean).join(' · ')}
             </span>
           </span>
           <Icon name="forward" size={18} className="row__chevron" />
@@ -91,7 +92,7 @@ export function HelpScreen() {
         <div className="row-between">
           <span className="stack">
             <span className="h3">Не нашёл ответ?</span>
-            <span className="caption">Напиши нам — отвечаем в течение дня</span>
+            <span className="caption">Сообщение сохранится для команды</span>
           </span>
           <Button size="sm" variant="dark" onClick={() => push('feedback')}>
             Написать
@@ -105,8 +106,10 @@ export function HelpScreen() {
 /* 18. Обратная связь */
 export function FeedbackScreen() {
   const { back } = useNav()
+  const { sendFeedback } = useStore()
   const [text, setText] = useState('')
   const [sent, setSent] = useState(false)
+  const [sending, setSending] = useState(false)
 
   return (
     <div className="screen">
@@ -134,20 +137,25 @@ export function FeedbackScreen() {
 
       {sent && (
         <Card tone="lavender">
-          <p className="body">Спасибо! Сообщение отправлено — ответ придёт в чат MAX.</p>
+          <p className="body">Спасибо! Сообщение сохранено для команды.</p>
         </Card>
       )}
 
       <div className="screen__spacer" />
 
       <Button
-        disabled={!text.trim() || sent}
-        onClick={() => {
-          setSent(true)
-          setText('')
+        disabled={!text.trim() || sent || sending}
+        onClick={async () => {
+          setSending(true)
+          const ok = await sendFeedback(text.trim())
+          setSending(false)
+          if (ok) {
+            setSent(true)
+            setText('')
+          }
         }}
       >
-        Отправить
+        {sending ? 'Отправляем…' : 'Отправить'}
       </Button>
       <button type="button" className="link-button" onClick={back}>
         Вернуться назад
@@ -158,8 +166,7 @@ export function FeedbackScreen() {
 
 /* 19. Настройки */
 export function SettingsScreen() {
-  const { openTab } = useNav()
-  const { state, setSetting, logout, reset } = useStore()
+  const { state, setSetting, reset, connection, user } = useStore()
 
   return (
     <div className="screen">
@@ -169,11 +176,11 @@ export function SettingsScreen() {
 
       <SectionTitle>Аккаунт</SectionTitle>
       <div className="list">
-        <Row icon="user" title="Личные данные" subtitle="Имя, группа, курс" />
+        <Row icon="user" title={user.name} subtitle={[user.course, user.group].filter(Boolean).join(' · ')} />
         <Row
           icon="bell"
           title="Уведомления"
-          subtitle={state.settings.notifications ? 'Напоминания включены' : 'Только в приложении'}
+          subtitle={state.settings.notifications ? 'Напоминания бота включены' : 'Напоминания бота выключены'}
           right={<Switch checked={state.settings.notifications} onChange={(v) => setSetting('notifications', v)} />}
         />
       </div>
@@ -186,42 +193,32 @@ export function SettingsScreen() {
           subtitle={state.settings.darkTheme ? 'Тёмная' : 'Светлая'}
           right={<Switch checked={state.settings.darkTheme} onChange={(v) => setSetting('darkTheme', v)} />}
         />
-        <Row
-          icon="globe"
-          title="Язык"
-          subtitle={state.settings.language === 'ru' ? 'Русский' : 'English'}
-          right={
-            <Button size="sm" variant="ghost" onClick={() => setSetting('language', state.settings.language === 'ru' ? 'en' : 'ru')}>
-              сменить
-            </Button>
-          }
-        />
-        <Row icon="shield-check" title="Безопасность" subtitle="Данные хранятся локально" />
+        <Row icon="globe" title="Язык" subtitle="Русский" />
+        <Row icon="shield-check" title="Безопасность" subtitle="Данные связаны с аккаунтом MAX" />
       </div>
 
-      <Card tone="flat">
-        <div className="row-between">
-          <span className="stack">
-            <span className="h3">Сбросить демо-данные</span>
-            <span className="caption">Вернуть задачи и настроение как в макете</span>
-          </span>
-          <Button size="sm" variant="ghost" onClick={reset}>
-            сброс
-          </Button>
-        </div>
-      </Card>
+      {connection === 'demo' && (
+        <Card tone="flat">
+          <div className="row-between">
+            <span className="stack">
+              <span className="h3">Сбросить демо-данные</span>
+              <span className="caption">Вернуть задачи и настроение как в макете</span>
+            </span>
+            <Button size="sm" variant="ghost" onClick={reset}>
+              сброс
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <div className="screen__spacer" />
 
       <button
         type="button"
         className="link-button"
-        onClick={() => {
-          logout()
-          openTab('privacy')
-        }}
+        onClick={closeWebApp}
       >
-        Выйти из приложения
+        Закрыть приложение
       </button>
     </div>
   )

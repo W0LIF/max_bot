@@ -3,7 +3,17 @@
   "installCommand": "cd frontend && npm install",
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 9 * * *"
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/api/((?!(?:index|cron)(?:/|$)).*)",
+      "destination": "/api/index?path=$1"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

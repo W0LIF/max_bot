@@ -31,7 +31,7 @@ export type MoodEntry = {
 }
 
 export type Member = {
-  id: string
+  id: string | number
   name: string
   group: string
   tasks: number
@@ -49,6 +49,12 @@ export type Settings = {
   notifications: boolean
   darkTheme: boolean
   language: 'ru' | 'en'
+}
+
+export type UserProfile = {
+  name: string
+  course: string
+  group: string
 }
 
 /* ——— Хелперы ——— */

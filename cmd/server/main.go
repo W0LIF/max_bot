@@ -1,4 +1,4 @@
-// cmd/server — HTTP API поверх SQLite-стора.
+// cmd/server — HTTP API поверх общего SQLite/Turso-хранилища.
 //
 //	go run ./cmd/server
 //
@@ -27,12 +27,12 @@ func main() {
 		dbPath = "bot.db"
 	}
 
-	store, err := storage.NewSQLiteStore(dbPath)
+	store, err := storage.NewConfiguredStore(dbPath)
 	if err != nil {
 		log.Fatalf("Не удалось открыть БД %q: %v", dbPath, err)
 	}
 	defer store.Close()
-	log.Printf("Хранилище готово: %s", dbPath)
+	log.Println("Хранилище готово")
 
 	notifier := bot.NewNotifier()
 	handler := httpapi.New(store, notifier)

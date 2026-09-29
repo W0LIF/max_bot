@@ -6,7 +6,7 @@ import { useStore } from '../store'
 
 /* 1. Политика конфиденциальности */
 export function PrivacyScreen() {
-  const { replace } = useNav()
+  const { openTab } = useNav()
   const { acceptConsent } = useStore()
   const [agreed, setAgreed] = useState(false)
 
@@ -24,7 +24,7 @@ export function PrivacyScreen() {
             необходимы для работы приложения: задачи, расписание, статистика и настройки.
           </p>
           <p className="caption">
-            Данные хранятся на вашем устройстве и не передаются третьим лицам.
+            Данные доступны в приложении и связаны с вашим аккаунтом MAX.
           </p>
         </div>
       </div>
@@ -40,9 +40,9 @@ export function PrivacyScreen() {
         />
         <Button
           disabled={!agreed}
-          onClick={() => {
-            acceptConsent()
-            replace('auth')
+          onClick={async () => {
+            const accepted = await acceptConsent()
+            if (accepted) openTab('home')
           }}
         >
           Продолжить
@@ -55,9 +55,13 @@ export function PrivacyScreen() {
 /* 2. Вход / регистрация */
 export function AuthScreen() {
   const { replace } = useNav()
-  const { authorize } = useStore()
+  const { authorize, connection } = useStore()
 
   const login = () => {
+    if (connection !== 'demo') {
+      window.location.reload()
+      return
+    }
     authorize()
     replace('auth-ok')
   }
@@ -86,10 +90,8 @@ export function AuthScreen() {
       <div className="screen__spacer" />
 
       <div className="screen__footer">
-        <Button onClick={login}>Войти через MAX</Button>
-        <Button variant="ghost" icon="phone" onClick={login}>
-          Войти по номеру телефона
-        </Button>
+        <Button onClick={login}>{connection === 'demo' ? 'Продолжить демо' : 'Проверить авторизацию MAX'}</Button>
+        {connection !== 'demo' && <p className="caption">Откройте приложение кнопкой в боте MAX.</p>}
       </div>
     </div>
   )

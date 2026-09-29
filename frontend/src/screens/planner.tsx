@@ -1,30 +1,32 @@
-import { useMemo, useState } from 'react'
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Card, Chip, Field, Input, Segmented, SectionTitle, StatusDot } from '../ui/kit'
 import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
-import { REMINDERS, STATUS_META, SUBJECTS, PRIORITY_META } from '../data'
-import { isOverdue, type Priority, type Task, type TaskStatus } from '../types'
+import { STATUS_META, SUBJECTS, PRIORITY_META } from '../data'
+import { isOverdue, parseDeadline, type Priority, type TaskStatus } from '../types'
 import { TaskCard } from './home'
 
 /* 6-7. Добавить задачу вручную / по фото */
 export function AddTaskScreen() {
   const { back, push } = useNav()
-  const { addTask } = useStore()
+  const { addTask, scanDraft, setScanDraft } = useStore()
   const [mode, setMode] = useState<'manual' | 'photo'>('manual')
-  const [title, setTitle] = useState('')
-  const [subject, setSubject] = useState(SUBJECTS[0])
-  const [deadline, setDeadline] = useState('')
+  const [title, setTitle] = useState(scanDraft?.title ?? '')
+  const [subject, setSubject] = useState(scanDraft?.subject ?? SUBJECTS[0])
+  const [deadline, setDeadline] = useState(scanDraft?.deadline ?? '')
   const [priority, setPriority] = useState<Priority>('important')
 
-  const submit = () => {
+  const submit = async () => {
     if (!title.trim()) return
-    addTask({
+    const saved = await addTask({
       title: title.trim(),
       subject,
-      deadline: deadline.trim() || 'Без срока',
+      deadline: deadline.trim(),
       priority,
     })
+    if (!saved) return
+    setScanDraft(null)
     back()
   }
 
@@ -46,7 +48,7 @@ export function AddTaskScreen() {
           </span>
           <span className="stack">
             <span className="h3">Фото расписания или задания</span>
-            <span className="caption">Загрузи изображение — остальное распознаю я</span>
+            <span className="caption">Загрузи изображение, чтобы подготовить черновик</span>
           </span>
         </button>
       )}
@@ -77,7 +79,7 @@ export function AddTaskScreen() {
         <Input
           value={deadline}
           onChange={(event) => setDeadline(event.target.value)}
-          placeholder="Введите…"
+          type="datetime-local"
           icon="calendar"
         />
       </Field>
@@ -112,7 +114,7 @@ export function AddTaskScreen() {
 
       <div className="screen__spacer" />
 
-      <Button disabled={!title.trim()} onClick={submit}>
+      <Button disabled={!title.trim() || !deadline} onClick={submit}>
         Добавить
       </Button>
     </div>
@@ -122,50 +124,66 @@ export function AddTaskScreen() {
 /* 8. Распознавание */
 export function ScanScreen() {
   const { push } = useNav()
-  const [scanning, setScanning] = useState(true)
+  const { scanTask } = useStore()
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview)
+  }, [preview])
+
+  const choosePhoto = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null
+    setPhoto(file)
+    setPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  const scan = async () => {
+    if (!photo) return
+    setScanning(true)
+    const ok = await scanTask(photo)
+    setScanning(false)
+    if (ok) push('add-task')
+  }
 
   return (
     <div className="screen">
+      <input
+        ref={fileInput}
+        className="visually-hidden"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={choosePhoto}
+      />
       <button
         type="button"
-        className={`dropzone${scanning ? '' : ' dropzone--active'}`}
-        onClick={() => setScanning((v) => !v)}
+        className={`dropzone${photo ? ' dropzone--active' : ''}`}
+        onClick={() => fileInput.current?.click()}
       >
-        <span className="dropzone__icon">
-          <Icon name="doc" size={32} />
-        </span>
+        {preview ? <img className="scan-preview" src={preview} alt="Предпросмотр загруженного фото" /> : (
+          <span className="dropzone__icon"><Icon name="camera" size={32} /></span>
+        )}
         <span className="stack">
-          <span className="h3">{scanning ? 'Распознаю текст' : 'Фото загружено'}</span>
-          <span className="caption">
-            {scanning ? 'Это займёт какое-то время' : 'Проверь поля и добавь задачу'}
-          </span>
+          <span className="h3">{photo?.name ?? 'Выберите фото задания'}</span>
+          <span className="caption">Камера или изображение из галереи</span>
         </span>
       </button>
 
-      <Card tone={scanning ? 'screen' : 'cream'}>
+      <Card tone="screen">
         <div className="stack">
-          <span className="h3">Что вижу на фото</span>
-          <span className="body">Лабораторная работа №4 — «Стек и очереди»</span>
-          <span className="caption">Языки программирования · сдать 22 сентября, 18:30</span>
+          <span className="h3">Черновик задачи</span>
+          <span className="body">Фото отправляется в обработчик для подготовки формы.</span>
+          <span className="caption">OCR пока не подключён. Проверьте поля перед сохранением.</span>
         </div>
-      </Card>
-
-      {!scanning && (
-        <div className="progress-line">
-          <div className="progress-line__fill" style={{ width: '70%' }} />
-        </div>
-      )}
-
-      <Card tone="flat">
-        <p className="body muted">
-          Распознанный текст можно поправить перед сохранением — данные никуда не уходят с устройства.
-        </p>
       </Card>
 
       <div className="screen__spacer" />
 
-      <Button icon="plus" onClick={() => push('add-task')}>
-        Перенести в задачу
+      <Button disabled={!photo || scanning} icon="plus" onClick={scan}>
+        {scanning ? 'Готовим черновик…' : 'Продолжить к задаче'}
       </Button>
     </div>
   )
@@ -245,16 +263,22 @@ export function CalendarScreen() {
         day,
         muted: false,
         today: day === today.getDate() && offset === 0,
-        mark: [3, 9, 16, 21].includes(day),
+        mark: state.tasks.some((task) => {
+          const deadline = parseDeadline(task.deadline)
+          return deadline?.toDateString() === new Date(first.getFullYear(), first.getMonth(), day).toDateString()
+        }),
       })
     }
     while (list.length % 7 !== 0) {
-      list.push({ day: list.length - (leading + days), muted: true, today: false, mark: false })
+      list.push({ day: list.length - (leading + days) + 1, muted: true, today: false, mark: false })
     }
     return { cells: list, monthTitle: title }
-  }, [offset])
+  }, [offset, state.tasks])
 
   const notes = state.notes.slice(0, 3)
+  const today = new Date()
+  const todayTasks = state.tasks.filter((task) => parseDeadline(task.deadline)?.toDateString() === today.toDateString())
+  const reminders = state.tasks.filter((task) => task.status !== 'done').slice(0, 3)
 
   return (
     <div className="screen screen--padded">
@@ -304,21 +328,22 @@ export function CalendarScreen() {
       </Card>
 
       <div className="stack" style={{ gap: 10 }}>
-        {state.tasks.slice(0, 2).map((task) => (
+        {todayTasks.slice(0, 2).map((task) => (
           <TaskCard key={task.id} task={task} />
         ))}
+        {todayTasks.length === 0 && <p className="caption">На сегодня задач нет.</p>}
       </div>
 
       <SectionTitle>Напоминания</SectionTitle>
       <div className="list">
-        {REMINDERS.map((reminder) => (
+        {reminders.map((reminder) => (
           <div className="row" key={reminder.id}>
             <span className="row__icon row__icon--cream">
               <Icon name="bell" size={17} />
             </span>
             <span className="stack grow">
               <span className="h3">{reminder.title}</span>
-              <span className="caption">{reminder.time}</span>
+              <span className="caption">{reminder.deadline}</span>
             </span>
             <StatusDot color={STATUS_META.new.color} />
           </div>
@@ -330,7 +355,9 @@ export function CalendarScreen() {
             </span>
             <span className="stack grow">
               <span className="h3">{note.text}</span>
-              <span className="caption">{note.allDay ? 'Весь день' : `${note.start} — ${note.end}`}</span>
+              <span className="caption">
+                {note.allDay ? 'Весь день' : `${formatNoteTime(note.start)} — ${formatNoteTime(note.end)}`}
+              </span>
             </span>
           </div>
         ))}
@@ -341,4 +368,9 @@ export function CalendarScreen() {
       </button>
     </div>
   )
+}
+
+function formatNoteTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 }

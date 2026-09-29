@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { INITIAL_TASKS, MOOD_HISTORY, USER } from './data'
-import type { MoodEntry, Note, Settings, Task, TaskStatus } from './types'
+import { GROUP_TASKS, INITIAL_TASKS, MEMBERS, MOOD_HISTORY, USER } from './data'
+import type { Member, MoodEntry, Note, Settings, Task, TaskStatus, UserProfile } from './types'
 import { sameId } from './types'
 import type { MoodValue } from './ui/kit'
+import { api, ApiError } from './api'
+import { getInitData } from './webapp'
 
 const STORAGE_KEY = 'telescope.state.v1'
 
@@ -13,13 +15,12 @@ const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
 const weekdayOf = (date: Date) => WEEKDAYS[(date.getDay() + 6) % 7]
 
-const byWeekday = (moods: MoodEntry[]) =>
-  [...moods].sort((a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day))
-
-type Settings = {
-  notifications: boolean
-  darkTheme: boolean
-  language: 'ru' | 'en'
+const byWeekday = (moods: MoodEntry[]) => {
+  const latestByDay = new Map<string, MoodEntry>()
+  for (const mood of moods) {
+    if (!latestByDay.has(mood.day)) latestByDay.set(mood.day, mood)
+  }
+  return [...latestByDay.values()].sort((a, b) => WEEKDAYS.indexOf(a.day) - WEEKDAYS.indexOf(b.day))
 }
 
 type State = {
@@ -29,6 +30,8 @@ type State = {
   moods: MoodEntry[]
   notes: Note[]
   members: string[]
+  groupMembers: Member[]
+  groupTasks: Task[]
   settings: Settings
 }
 
@@ -39,6 +42,8 @@ const DEFAULT_STATE: State = {
   moods: MOOD_HISTORY,
   notes: [],
   members: ['m1', 'm3'],
+  groupMembers: [],
+  groupTasks: [],
   settings: { notifications: true, darkTheme: false, language: 'ru' },
 }
 
@@ -56,21 +61,29 @@ function loadState(): State {
 
 type Store = {
   state: State
-  user: typeof USER
+  user: UserProfile
+  connection: 'loading' | 'online' | 'demo' | 'open-max' | 'error'
+  connectionMessage: string
+  error: string | null
   /* производные показатели «Твоего баланса» */
   todayTasks: Task[]
   done: number
   load: number
   progress: number
   mood: MoodValue
-  acceptConsent: () => void
+  acceptConsent: () => Promise<boolean>
+  setScanDraft: (draft: { title: string; subject: string; deadline: string } | null) => void
+  scanDraft: { title: string; subject: string; deadline: string } | null
+  scanTask: (photo: File) => Promise<boolean>
+  sendFeedback: (text: string) => Promise<boolean>
+  dismissError: () => void
   authorize: () => void
   logout: () => void
-  addTask: (task: Omit<Task, 'id' | 'status'>) => void
+  addTask: (task: Omit<Task, 'id' | 'status'>) => Promise<boolean>
   toggleTask: (id: Task['id']) => void
   setTaskStatus: (id: Task['id'], status: TaskStatus) => void
-  saveMood: (mood: MoodValue, note: string) => void
-  addNote: (note: Omit<Note, 'id'>) => void
+  saveMood: (mood: MoodValue, note: string) => Promise<boolean>
+  addNote: (note: Omit<Note, 'id'>) => Promise<boolean>
   toggleMember: (id: string) => void
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void
   reset: () => void
@@ -80,60 +93,188 @@ const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>(loadState)
+  const [connection, setConnection] = useState<Store['connection']>('loading')
+  const [connectionMessage, setConnectionMessage] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<UserProfile>(USER)
+  const [scanDraft, setScanDraft] = useState<Store['scanDraft']>(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+    let active = true
 
-  const acceptConsent = useCallback(() => setState((s) => ({ ...s, consent: true })), [])
+    const bootstrap = async () => {
+      const initData = getInitData()
+      const demoRequested = new URLSearchParams(window.location.search).get('demo') === '1'
+      if (!initData) {
+        if (import.meta.env.DEV && demoRequested) {
+          if (active) {
+            setState((current) => ({
+              ...current,
+              groupMembers: MEMBERS,
+              groupTasks: GROUP_TASKS,
+            }))
+            setConnection('demo')
+          }
+        } else if (active) {
+          setConnection('open-max')
+          setConnectionMessage('Откройте приложение через кнопку в боте MAX.')
+        }
+        return
+      }
+
+      try {
+        const auth = await api.authValidate(initData)
+        const me = await api.me()
+        const [tasks, moods, notes, groupMembers] = await Promise.all([
+          api.getTasks(),
+          api.getMoods(),
+          api.getNotes(),
+          api.getGroupMembers(),
+        ])
+        const owners = new Map(groupMembers.map((member) => [Number(member.id), member.name]))
+        const groupTasks = await api.getGroupTasks(owners)
+        if (!active) return
+
+        setUser({
+          name: me.name || auth.user.name || 'Студент',
+          course: '',
+          group: groupMembers[0]?.group || '',
+        })
+        setState((current) => ({
+          ...current,
+          consent: me.consent,
+          authorized: true,
+          tasks,
+          moods: byWeekday(moods),
+          notes,
+          members: groupMembers.map((member) => String(member.id)),
+          groupMembers,
+          groupTasks,
+          settings: { ...current.settings, notifications: me.reminders_on },
+        }))
+        setConnection('online')
+      } catch (cause) {
+        if (!active) return
+        setConnection('error')
+        setConnectionMessage(cause instanceof Error ? cause.message : 'Не удалось загрузить приложение.')
+      }
+    }
+
+    void bootstrap()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (connection === 'online' || connection === 'demo') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    }
+  }, [connection, state])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = state.settings.darkTheme ? 'dark' : 'light'
+  }, [state.settings.darkTheme])
+
+  const acceptConsent = useCallback(async () => {
+    try {
+      if (connection === 'online') await api.setConsent(true)
+      setState((s) => ({ ...s, consent: true }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить согласие.')
+      return false
+    }
+  }, [connection])
+
   const authorize = useCallback(() => setState((s) => ({ ...s, authorized: true })), [])
   const logout = useCallback(
     () => setState((s) => ({ ...s, authorized: false, consent: false })),
     [],
   )
 
-  const addTask = useCallback((task: Omit<Task, 'id' | 'status'>) => {
-    setState((s) => ({
-      ...s,
-      tasks: [{ ...task, id: `t${Date.now()}`, status: 'new' }, ...s.tasks],
-    }))
-  }, [])
+  const addTask = useCallback(async (task: Omit<Task, 'id' | 'status'>) => {
+    try {
+      const created = connection === 'online'
+        ? await api.createTask(task)
+        : { ...task, id: `t${Date.now()}`, status: 'new' as const }
+      setState((s) => ({ ...s, tasks: [created, ...s.tasks] }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить задачу.')
+      return false
+    }
+  }, [connection])
 
-  const toggleTask = useCallback((id: string) => {
-    setState((s) => ({
-      ...s,
-      tasks: s.tasks.map((t) =>
-        sameId(t.id, id) ? { ...t, status: t.status === 'done' ? 'in_progress' : 'done' } : t,
-      ),
-    }))
-  }, [])
-
-  const setTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    setState((s) => ({ ...s, tasks: s.tasks.map((t) => (sameId(t.id, id) ? { ...t, status } : t)) }))
-  }, [])
-
-  const saveMood = useCallback((mood: MoodValue, note: string) => {
-    setState((s) => {
-      const today = new Date()
-      const day = weekdayOf(today)
-      const entry: MoodEntry = {
-        id: `d${today.getTime()}`,
-        day,
-        date: today.toLocaleDateString('ru-RU').slice(0, 5),
-        value: mood === 'good' ? 18 : mood === 'ok' ? 13 : 8,
-        mood,
-        note: note || undefined,
+  const toggleTask = useCallback((id: Task['id']) => {
+    const task = state.tasks.find((item) => sameId(item.id, id))
+    if (!task) return
+    const status = task.status === 'done' ? 'new' : 'done'
+    void (async () => {
+      try {
+        const updated: Task = connection === 'online' ? await api.setTaskStatus(id, status) : { ...task, status }
+        setState((s) => ({ ...s, tasks: s.tasks.map((item) => sameId(item.id, id) ? updated : item) }))
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Не удалось изменить задачу.')
       }
-      /* Отметка за этот день заменяется, порядок дней недели сохраняется —
-         сортировка по value перемешивала точки и ломала линию графика. */
-      const rest = s.moods.filter((m) => m.day !== day)
-      return { ...s, moods: byWeekday([...rest, entry]) }
-    })
-  }, [])
+    })()
+  }, [connection, state.tasks])
 
-  const addNote = useCallback((note: Omit<Note, 'id'>) => {
-    setState((s) => ({ ...s, notes: [{ ...note, id: `n${Date.now()}` }, ...s.notes] }))
-  }, [])
+  const setTaskStatus = useCallback((id: Task['id'], status: TaskStatus) => {
+    void (async () => {
+      try {
+        const task = state.tasks.find((item) => sameId(item.id, id))
+        if (!task) return
+        const updated: Task = connection === 'online' ? await api.setTaskStatus(id, status) : { ...task, status }
+        setState((s) => ({ ...s, tasks: s.tasks.map((item) => sameId(item.id, id) ? updated : item) }))
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Не удалось изменить задачу.')
+      }
+    })()
+  }, [connection, state.tasks])
+
+  const saveMood = useCallback(async (mood: MoodValue, note: string) => {
+    const today = new Date()
+    const day = weekdayOf(today)
+    try {
+      const entry: MoodEntry = connection === 'online'
+        ? await api.saveMood(mood, note)
+        : {
+            id: `d${today.getTime()}`,
+            day,
+            date: today.toLocaleDateString('ru-RU').slice(0, 5),
+            value: mood === 'good' ? 18 : mood === 'ok' ? 13 : 8,
+            mood,
+            note: note || undefined,
+          }
+      setState((s) => {
+        const rest = s.moods.filter((m) => m.day !== day)
+        return { ...s, moods: byWeekday([{ ...entry, day }, ...rest]) }
+      })
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить настроение.')
+      return false
+    }
+  }, [connection])
+
+  const addNote = useCallback(async (note: Omit<Note, 'id'>) => {
+    try {
+      const today = new Date()
+      const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+      const dateTime = (time: string, end: boolean) => {
+        const value = note.allDay ? `${localDate}T${end ? '23:59' : '00:00'}` : `${localDate}T${time || '00:00'}`
+        return new Date(value).toISOString()
+      }
+      const payload = { ...note, start: dateTime(note.start, false), end: dateTime(note.end, true) }
+      const created = connection === 'online' ? await api.createNote(payload) : { ...note, id: `n${Date.now()}` }
+      setState((s) => ({ ...s, notes: [created, ...s.notes] }))
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить заметку.')
+      return false
+    }
+  }, [connection])
 
   const toggleMember = useCallback((id: string) => {
     setState((s) => ({
@@ -143,10 +284,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setState((s) => ({ ...s, settings: { ...s.settings, [key]: value } }))
-  }, [])
+    void (async () => {
+      try {
+        if (key === 'notifications' && connection === 'online') await api.setReminders(value as boolean)
+        setState((s) => ({ ...s, settings: { ...s.settings, [key]: value } }))
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить настройку.')
+      }
+    })()
+  }, [connection])
 
   const reset = useCallback(() => setState(DEFAULT_STATE), [])
+  const scanTask = useCallback(async (photo: File) => {
+    try {
+      const scanned = connection === 'online'
+        ? await api.scanTask(photo)
+        : { title: photo.name.replace(/\.[^.]+$/, '') || 'Новая задача', subject: 'Общее', deadline: new Date(Date.now() + 86400000).toISOString() }
+      const date = new Date(scanned.deadline)
+      const localDeadline = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      setScanDraft({ ...scanned, deadline: localDeadline })
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось обработать фотографию.')
+      return false
+    }
+  }, [connection])
+  const sendFeedback = useCallback(async (text: string) => {
+    try {
+      if (connection === 'online') await api.sendFeedback(text)
+      return true
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'Не удалось отправить сообщение.')
+      return false
+    }
+  }, [connection])
+  const dismissError = useCallback(() => setError(null), [])
 
   const derived = useMemo(() => {
     const todayTasks = state.tasks.filter((t) => t.status !== 'done').slice(0, 4)
@@ -165,9 +337,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     state,
-    user: USER,
+    user,
+    connection,
+    connectionMessage,
+    error,
     ...derived,
     acceptConsent,
+    setScanDraft,
+    scanDraft,
+    scanTask,
+    sendFeedback,
+    dismissError,
     authorize,
     logout,
     addTask,
@@ -183,6 +363,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useStore(): Store {
   const store = useContext(StoreContext)
   if (!store) throw new Error('useStore должен вызываться внутри StoreProvider')

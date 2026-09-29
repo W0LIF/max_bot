@@ -56,33 +56,18 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) tick(ctx context.Context) {
-	before := time.Now().Add(s.before)
-
-	tasks, err := s.store.GetTasksDueBefore(ctx, before)
-	if err != nil {
-		s.log.Error("не удалось получить задачи с близким дедлайном", "err", err)
-		return
-	}
-
-	if len(tasks) == 0 {
-		return
-	}
-
-	s.log.Info("найдены задачи для напоминания", "count", len(tasks))
-
-	for _, task := range tasks {
-		if err := s.store.SetTaskReminderSent(ctx, task.ID); err != nil {
-			s.log.Error("не удалось пометить напоминание отправленным",
-				"task_id", task.ID,
-				"err", err,
-			)
-			continue
-		}
-
+	sent, err := DispatchDue(ctx, s.store, time.Now().Add(s.before), func(ctx context.Context, task storage.Task) error {
 		select {
 		case s.out <- task:
+			return nil
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
+	})
+	if err != nil {
+		s.log.Error("не удалось обработать напоминания", "err", err)
+	}
+	if sent > 0 {
+		s.log.Info("напоминания поставлены в очередь", "count", sent)
 	}
 }

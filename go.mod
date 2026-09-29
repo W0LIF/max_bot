@@ -5,6 +5,8 @@ go 1.25.0
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/max-messenger/max-bot-api-client-go v1.7.1
+	modernc.org/sqlite v1.59.0
+	turso.tech/database/tursogo-serverless v0.0.0-20260929140926-36da5b2e435c
 )
 
 require (
@@ -17,5 +19,4 @@ require (
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.59.0 // indirect
 )

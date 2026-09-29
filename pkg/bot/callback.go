@@ -22,6 +22,7 @@ const (
 	CbMenuEdit   = "menu:edit"
 	CbMenuDelete = "menu:delete"
 	CbMenuDone   = "menu:done"
+	CbMenuMood   = "menu:mood"
 
 	CbMoodGood = "mood:good" // 😊
 	CbMoodOK   = "mood:ok"   // 😐

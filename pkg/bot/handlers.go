@@ -186,6 +186,8 @@ func (b *Bot) onCallback(ctx context.Context, upd *schemes.MessageCallbackUpdate
 		b.showDeleteList(ctx, upd)
 	case CbMenuDone:
 		b.showDoneList(ctx, upd)
+	case CbMenuMood:
+		b.sendToUser(ctx, userID, "Как ты себя чувствуешь?", kbMood())
 
 	case CbMoodGood, CbMoodOK, CbMoodBad:
 		b.onMood(ctx, upd)

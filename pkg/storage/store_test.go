@@ -357,6 +357,9 @@ func runStoreTests(t *testing.T, s Store) {
 		if !got.ReminderSent {
 			t.Fatalf("ReminderSent не стал true")
 		}
+		if err := s.SetTaskReminderSent(ctx, id); !errors.Is(err, ErrReminderAlreadySent) {
+			t.Fatalf("повторная отметка должна отклоняться, получили %v", err)
+		}
 	})
 }
 

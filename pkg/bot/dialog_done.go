@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/max-messenger/max-bot-api-client-go/schemes"
 
@@ -70,19 +71,31 @@ func (b *Bot) onTaskDone(ctx context.Context, upd *schemes.MessageCallbackUpdate
 }
 
 // onMood — callback mood:good / mood:ok / mood:bad.
-// Пока просто подтверждаем и возвращаем в меню. Поле для хранения
-// настроения появится позже — это общая задача с Разр1.
 func (b *Bot) onMood(ctx context.Context, upd *schemes.MessageCallbackUpdate) {
 	userID := upd.Callback.User.UserId
 
+	var value storage.MoodValue
 	reply := "Записал. Спасибо!"
 	switch upd.Callback.Payload {
 	case CbMoodGood:
+		value = storage.MoodGood
 		reply = "😊 Отлично! Так держать."
 	case CbMoodOK:
+		value = storage.MoodOK
 		reply = "😐 Принял. Не забывай про отдых."
 	case CbMoodBad:
+		value = storage.MoodBad
 		reply = "😫 Понял. Если тяжело — сделай паузу, ты не обязан(а) всё сразу."
+	}
+
+	if _, err := b.store.CreateMood(ctx, &storage.Mood{
+		UserID:    userID,
+		Value:     value,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		log.Printf("CreateMood(%d): %v", userID, err)
+		b.sendToUser(ctx, userID, "Не удалось сохранить отметку. Попробуй ещё раз.", kbMainMenu())
+		return
 	}
 
 	b.sendToUser(ctx, userID, reply, kbMainMenu())

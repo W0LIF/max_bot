@@ -4,7 +4,6 @@ import {
   Avatar,
   Button,
   Card,
-  Chip,
   Field,
   Input,
   Meter,
@@ -102,7 +101,7 @@ export function HomeScreen() {
         </div>
         {overloaded && (
           <p className="caption">
-            Нагрузка выше нормы — разгрузи день или поставь одну задачу на паузу.
+            Нагрузка выше нормы — выбери одну задачу и двигайся по шагам.
           </p>
         )}
       </Card>
@@ -172,7 +171,7 @@ export function MoodScreen() {
         <div className="chart">
           <svg className="chart__svg" viewBox="0 0 100 52" preserveAspectRatio="none" height="130">
             {[10, 24, 38].map((line) => (
-              <line key={line} x1="4" y1={line} x2="96" y2={line} stroke="rgba(11,25,86,.08)" strokeWidth="0.6" />
+              <line key={line} x1="4" y1={line} x2="96" y2={line} stroke="var(--line)" strokeWidth="0.6" />
             ))}
             <polyline
               points={entries.map((entry, i) => `${x(i)},${y(entry.value)}`).join(' ')}
@@ -257,9 +256,9 @@ export function MoodCheckScreen() {
       <div className="screen__spacer" />
 
       <Button
-        onClick={() => {
-          saveMood(value, note)
-          back()
+        onClick={async () => {
+          const saved = await saveMood(value, note)
+          if (saved) back()
         }}
       >
         Сохранить
@@ -305,7 +304,7 @@ export function NoteScreen() {
           <Input
             value={start}
             onChange={(event) => setStart(event.target.value)}
-            placeholder="Введите…"
+            type="time"
             disabled={allDay}
           />
         </Field>
@@ -313,27 +312,19 @@ export function NoteScreen() {
           <Input
             value={end}
             onChange={(event) => setEnd(event.target.value)}
-            placeholder="Введите…"
+            type="time"
             disabled={allDay}
           />
         </Field>
-      </div>
-
-      <div className="chip-row">
-        {['Идея', 'Важно', 'Позже'].map((tag) => (
-          <Chip key={tag} tone="important">
-            {tag}
-          </Chip>
-        ))}
       </div>
 
       <div className="screen__spacer" />
 
       <Button
         disabled={!text.trim()}
-        onClick={() => {
-          addNote({ text: text.trim(), allDay, start, end })
-          back()
+        onClick={async () => {
+          const saved = await addNote({ text: text.trim(), allDay, start, end })
+          if (saved) back()
         }}
       >
         Отправить
@@ -351,7 +342,7 @@ export function ProfileLine() {
       <span className="stack">
         <span className="h2">{user.name}</span>
         <span className="caption">
-          {user.course} · {user.group}
+          {[user.course, user.group].filter(Boolean).join(' · ')}
         </span>
       </span>
     </div>

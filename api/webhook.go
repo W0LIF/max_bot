@@ -16,19 +16,21 @@ var (
 	storeErr  error
 )
 
-// getStore возвращает singleton-стор для текущего процесса.
-// На Vercel процесс живёт между вызовами в рамках «тёплого» инстанса,
-// поэтому sync.Once даёт переиспользование. При холодном старте —
-// открывается заново.
+// getStore returns one configured store per warm Vercel instance. Set
+// TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for durable storage; the /tmp
+// SQLite fallback is only suitable for local or disposable deployments.
 func getStore() (storage.Store, error) {
 	storeOnce.Do(func() {
 		path := os.Getenv("DB_PATH")
 		if path == "" {
 			path = "/tmp/bot.db" // Vercel: единственная writable-директория
 		}
-		store, storeErr = storage.NewSQLiteStore(path)
+		if os.Getenv("TURSO_DATABASE_URL") == "" {
+			log.Printf("webhook: TURSO_DATABASE_URL не задан, данные в %s будут временными", path)
+		}
+		store, storeErr = storage.NewConfiguredStore(path)
 		if storeErr != nil {
-			log.Printf("webhook: не удалось открыть БД %q: %v", path, storeErr)
+			log.Printf("webhook: не удалось открыть хранилище: %v", storeErr)
 		}
 	})
 	return store, storeErr

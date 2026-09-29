@@ -3,7 +3,8 @@ import { Avatar, Button, Card, Chip, Input, SectionTitle } from '../ui/kit'
 import { Icon } from '../ui/Icon'
 import { useNav } from '../nav'
 import { useStore } from '../store'
-import { ACHIEVEMENTS, GROUP_TASKS, MEMBERS, STATUS_META } from '../data'
+import { ACHIEVEMENTS, STATUS_META } from '../data'
+import { parseDeadline } from '../types'
 import { TaskCard } from './home'
 
 /* 13. Совместный режим: выбор однокурсников */
@@ -12,20 +13,20 @@ export function GroupScreen() {
   const { state, toggleMember } = useStore()
   const [query, setQuery] = useState('')
 
-  const members = MEMBERS.filter((m) => m.name.toLowerCase().includes(query.toLowerCase()))
+  const members = state.groupMembers.filter((m) => m.name.toLowerCase().includes(query.toLowerCase()))
 
   return (
     <div className="screen">
       <div className="screen__hero">
         <h1 className="h1">Общие задачи</h1>
-        <span className="caption">Выберите, с кем хотите поделиться заданиями</span>
+        <span className="caption">Участники вашей учебной группы</span>
       </div>
 
       <span className="input-wrap input-wrap--left">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Поиск по группе ИКТн-54"
+          placeholder={`Поиск по группе ${state.groupMembers[0]?.group ?? ''}`}
         />
         <span className="input-wrap__icon">
           <Icon name="search" size={18} />
@@ -35,9 +36,9 @@ export function GroupScreen() {
       <Card>
         <div className="people">
           {members.map((member, index) => {
-            const checked = state.members.includes(member.id)
+            const checked = state.members.includes(String(member.id))
             return (
-              <button type="button" className="people__row" key={member.id} onClick={() => toggleMember(member.id)}>
+              <button type="button" className="people__row" key={member.id} onClick={() => toggleMember(String(member.id))}>
                 <Avatar
                   name={member.name}
                   tone={(['blue', 'pink', 'cream', 'lavender'] as const)[index % 4]}
@@ -53,6 +54,7 @@ export function GroupScreen() {
               </button>
             )
           })}
+          {members.length === 0 && <p className="caption">В группе пока нет участников.</p>}
         </div>
       </Card>
 
@@ -62,7 +64,7 @@ export function GroupScreen() {
         disabled={state.members.length === 0}
         onClick={() => push('group-tasks')}
       >
-        Создать группу ({state.members.length})
+        Общие задачи ({state.members.length})
       </Button>
     </div>
   )
@@ -72,26 +74,36 @@ export function GroupScreen() {
 export function GroupTasksScreen() {
   const { push } = useNav()
   const { state } = useStore()
-  const [day, setDay] = useState(3)
+  const [day, setDay] = useState((new Date().getDay() + 6) % 7)
 
-  const chosen = MEMBERS.filter((m) => state.members.includes(m.id))
-  const done = GROUP_TASKS.filter((t) => t.status === 'done')
-  const inProgress = GROUP_TASKS.filter((t) => t.status !== 'done')
-  const days = [
-    { label: 'Пн', count: 3 },
-    { label: 'Вт', count: 5 },
-    { label: 'Ср', count: 2 },
-    { label: 'Чт', count: 6 },
-    { label: 'Пт', count: 4 },
-    { label: 'Сб', count: 1 },
-    { label: 'Вс', count: 0 },
-  ]
+  const chosen = state.groupMembers.filter((member) => state.members.includes(String(member.id)))
+  const selectedNames = new Set(chosen.map((member) => member.name))
+  const visibleTasks = state.groupTasks.filter((task) => !task.owner || selectedNames.has(task.owner))
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
+  weekStart.setHours(0, 0, 0, 0)
+  const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((label, index) => {
+    const date = new Date(weekStart)
+    date.setDate(weekStart.getDate() + index)
+    const count = visibleTasks.filter((task) => {
+      const deadline = parseDeadline(task.deadline)
+      return deadline?.toDateString() === date.toDateString()
+    }).length
+    return { label, count, date }
+  })
+  const selectedDate = days[day]?.date
+  const dayTasks = visibleTasks.filter((task) => {
+    const deadline = parseDeadline(task.deadline)
+    return deadline && selectedDate && deadline.toDateString() === selectedDate.toDateString()
+  })
+  const done = dayTasks.filter((task) => task.status === 'done')
+  const inProgress = dayTasks.filter((task) => task.status !== 'done')
 
   return (
     <div className="screen screen--padded">
       <div className="screen__hero">
         <h1 className="h1">Группа</h1>
-        <span className="caption">Общие задачи · ИКТн-54</span>
+        <span className="caption">Общие задачи · {state.groupMembers[0]?.group ?? 'группа'}</span>
       </div>
 
       <div className="chip-row">
@@ -149,7 +161,7 @@ export function GroupTasksScreen() {
           <span className="stack">
             <span className="h3">Средний статус группы</span>
             <span className="caption">
-              {done.length} из {GROUP_TASKS.length} · {STATUS_META.in_progress.label}
+              {done.length} из {dayTasks.length} · {STATUS_META.in_progress.label}
             </span>
           </span>
           <span className="status-dot" style={{ background: STATUS_META.done.color }} />
@@ -182,7 +194,7 @@ export function MapScreen() {
 
       <div className="map">
         <svg className="map__path" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <path d={path} fill="none" stroke="rgba(11,25,86,.35)" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
+          <path d={path} fill="none" stroke="var(--line-strong)" strokeWidth="0.8" strokeDasharray="2.5 2.5" />
         </svg>
         {points.map((node) => (
           <button

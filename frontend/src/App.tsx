@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { Icon } from './ui/Icon'
+import { Button, Logo } from './ui/kit'
 import { NavProvider, TABS, useNav } from './nav'
 import type { ScreenId } from './nav'
-import { StoreProvider } from './store'
+import { StoreProvider, useStore } from './store'
 import { AuthOkScreen, AuthScreen, PrivacyScreen } from './screens/onboarding'
 import { HomeScreen, MoodCheckScreen, MoodScreen, NoteScreen } from './screens/home'
 import { AddTaskScreen, CalendarScreen, ScanScreen, TasksScreen } from './screens/planner'
@@ -128,11 +130,56 @@ export function Shell() {
   )
 }
 
+function RuntimeGate() {
+  const { connection, connectionMessage, error, dismissError, state } = useStore()
+  const { openTab } = useNav()
+
+  useEffect(() => {
+    if (connection === 'online') openTab(state.consent ? 'home' : 'privacy')
+    if (connection === 'demo') openTab('home')
+  }, [connection, openTab, state.consent])
+
+  if (connection === 'loading') {
+    return (
+      <div className="runtime-state">
+        <Logo size={54} />
+        <span className="h2">Телескоп</span>
+        <span className="caption">Подключаем приложение…</span>
+      </div>
+    )
+  }
+
+  if (connection === 'open-max' || connection === 'error') {
+    return (
+      <div className="runtime-state">
+        <Logo size={54} />
+        <span className="h2">{connection === 'open-max' ? 'Телескоп в MAX' : 'Не удалось подключиться'}</span>
+        <p className="body muted">{connectionMessage}</p>
+        <Button onClick={() => window.location.reload()}>
+          {connection === 'open-max' ? 'Проверить снова' : 'Повторить'}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <Shell />
+      {error && (
+        <button type="button" role="alert" className="runtime-toast" onClick={dismissError}>
+          {error}
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
+    </>
+  )
+}
+
 export default function App() {
   return (
     <StoreProvider>
       <NavProvider>
-        <Shell />
+        <RuntimeGate />
       </NavProvider>
     </StoreProvider>
   )

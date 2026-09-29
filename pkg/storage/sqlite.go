@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
+	turso "turso.tech/database/tursogo-serverless"
 )
 
 type SQLiteStore struct {
@@ -21,14 +24,38 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	return newStoreFromDB(db, path == ":memory:")
+}
 
-	// :memory: живёт в одном соединении — иначе таблицы из migrate()
-	// не увидят последующие запросы.
-	if path == ":memory:" {
-		db.SetMaxOpenConns(1)
+// NewConfiguredStore uses Turso when configured and local SQLite otherwise.
+func NewConfiguredStore(localPath string) (*SQLiteStore, error) {
+	remoteURL := strings.TrimSpace(os.Getenv("TURSO_DATABASE_URL"))
+	if remoteURL == "" {
+		if localPath == "" {
+			localPath = strings.TrimSpace(os.Getenv("DB_PATH"))
+		}
+		if localPath == "" {
+			localPath = "bot.db"
+		}
+		return NewSQLiteStore(localPath)
 	}
 
+	token := strings.TrimSpace(os.Getenv("TURSO_AUTH_TOKEN"))
+	if token == "" {
+		return nil, errors.New("задайте TURSO_AUTH_TOKEN вместе с TURSO_DATABASE_URL")
+	}
+	db := sql.OpenDB(turso.NewConnector(remoteURL, token))
+	return newStoreFromDB(db, true)
+}
+
+func newStoreFromDB(db *sql.DB, singleConnection bool) (*SQLiteStore, error) {
+	if singleConnection {
+		// In-memory SQLite needs one connection; remote serverless SQL also uses
+		// one connection so migrations and transactional writes stay ordered.
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
@@ -301,13 +328,29 @@ func (s *SQLiteStore) SetTaskReminderSent(_ context.Context, taskID int64) error
 	defer s.mu.Unlock()
 
 	res, err := s.db.Exec(
-		`UPDATE tasks SET reminder_sent = 1 WHERE id = ?`,
+		`UPDATE tasks SET reminder_sent = 1 WHERE id = ? AND reminder_sent = 0`,
 		taskID,
 	)
 	if err != nil {
 		return err
 	}
-	return checkRowsAffected(res, ErrTaskNotFound)
+	updated, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated > 0 {
+		return nil
+	}
+
+	var exists int
+	err = s.db.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, taskID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTaskNotFound
+	}
+	if err != nil {
+		return err
+	}
+	return ErrReminderAlreadySent
 }
 
 // --- helpers ---

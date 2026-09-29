@@ -23,6 +23,7 @@ export type ScreenId =
   | 'feedback'
   | 'settings'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const TABS: { id: ScreenId; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Главная', icon: 'home' },
   { id: 'calendar', label: 'Даты', icon: 'calendar' },
@@ -44,7 +45,7 @@ type Nav = {
 
 const NavContext = createContext<Nav | null>(null)
 
-export function NavProvider({ children, initial = 'privacy' }: { children: ReactNode; initial?: ScreenId }) {
+export function NavProvider({ children, initial = initialScreen() }: { children: ReactNode; initial?: ScreenId }) {
   const [stack, setStack] = useState<ScreenId[]>([initial])
 
   const push = useCallback((screen: ScreenId) => setStack((s) => [...s, screen]), [])
@@ -69,6 +70,12 @@ export function NavProvider({ children, initial = 'privacy' }: { children: React
   return <NavContext.Provider value={value}>{children}</NavContext.Provider>
 }
 
+function initialScreen(): ScreenId {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('from') === 'bot' || params.get('demo') === '1' ? 'home' : 'privacy'
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNav(): Nav {
   const nav = useContext(NavContext)
   if (!nav) throw new Error('useNav должен вызываться внутри NavProvider')

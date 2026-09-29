@@ -498,7 +498,7 @@
   justify-content: space-between;
   gap: 2px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-  background: #fff;
+  background: var(--paper);
   border-radius: 26px 26px 0 0;
   box-shadow: 0 -8px 24px rgba(11, 25, 86, 0.08);
 }
@@ -551,4 +551,84 @@
   border-radius: 50%;
   background: var(--blue);
   color: #fff;
+}
+
+:root[data-theme='dark'] .btn--primary {
+  background: #35589d;
+}
+
+:root[data-theme='dark'] .btn--dark,
+:root[data-theme='dark'] .fab,
+:root[data-theme='dark'] .chip--active,
+:root[data-theme='dark'] .week-strip__day--active,
+:root[data-theme='dark'] .calendar__day--today,
+:root[data-theme='dark'] .map__bubble--done {
+  background: #293957;
+  color: #fff;
+}
+
+:root[data-theme='dark'] .btn--ghost,
+:root[data-theme='dark'] .icon-button,
+:root[data-theme='dark'] .input,
+:root[data-theme='dark'] .textarea,
+:root[data-theme='dark'] .chip,
+:root[data-theme='dark'] .chip--soft,
+:root[data-theme='dark'] .segmented,
+:root[data-theme='dark'] .week-strip__day,
+:root[data-theme='dark'] .map__bubble,
+:root[data-theme='dark'] .map__label {
+  background: var(--paper);
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .btn--ghost:hover:not(:disabled),
+:root[data-theme='dark'] .icon-button:hover {
+  background: var(--screen-alt);
+}
+
+:root[data-theme='dark'] .list,
+:root[data-theme='dark'] .input,
+:root[data-theme='dark'] .textarea,
+:root[data-theme='dark'] .check__box:not(.check__box--on),
+:root[data-theme='dark'] .week-strip__day,
+:root[data-theme='dark'] .map__bubble,
+:root[data-theme='dark'] .map__label {
+  background: var(--paper);
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .input::placeholder,
+:root[data-theme='dark'] .textarea::placeholder {
+  color: #aebbd2;
+}
+
+:root[data-theme='dark'] .switch--on {
+  background: #4268ad;
+}
+
+:root[data-theme='dark'] .check__box--on {
+  background: #35589d;
+  border-color: #35589d;
+}
+
+:root[data-theme='dark'] .avatar:not(.avatar--lavender):not(.avatar--cream):not(.avatar--pink):not(.avatar--navy) {
+  background: #35589d;
+  color: #fff;
+}
+
+:root[data-theme='dark'] .logo-badge {
+  background: #35589d;
+}
+
+:root[data-theme='dark'] .avatar--navy {
+  background: #293957;
+  color: #fff;
+}
+
+:root[data-theme='dark'] .tab {
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] .row:hover {
+  background: var(--screen-alt);
 }

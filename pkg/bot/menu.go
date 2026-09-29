@@ -1,7 +1,10 @@
 package bot
 
 import (
+	"net/url"
+	"os"
 	"strconv"
+	"strings"
 
 	maxbot "github.com/max-messenger/max-bot-api-client-go"
 	"github.com/max-messenger/max-bot-api-client-go/schemes"
@@ -44,7 +47,21 @@ func kbReminders() *maxbot.Keyboard {
 }
 
 func kbMainMenu() *maxbot.Keyboard {
-	return kbFromRows(
+	rows := [][]schemes.ButtonInterface{}
+	if rawURL := strings.TrimSpace(os.Getenv("WEBAPP_URL")); rawURL != "" {
+		if appURL, err := url.Parse(rawURL); err == nil && appURL.Scheme == "https" && appURL.Host != "" {
+			query := appURL.Query()
+			query.Set("from", "bot")
+			appURL.RawQuery = query.Encode()
+			rows = append(rows, []schemes.ButtonInterface{
+				schemes.OpenAppButton{
+					Button: schemes.Button{Type: schemes.OPEN_APP, Text: "📱 Открыть Телескоп"},
+					WebApp: appURL.String(),
+				},
+			})
+		}
+	}
+	rows = append(rows,
 		[]schemes.ButtonInterface{
 			cbBtn("➕ Добавить задачу", CbMenuAdd),
 			cbBtn("📋 Мои задачи", CbMenuList),
@@ -56,7 +73,11 @@ func kbMainMenu() *maxbot.Keyboard {
 		[]schemes.ButtonInterface{
 			cbBtn("✅ Выполнено", CbMenuDone),
 		},
+		[]schemes.ButtonInterface{
+			cbBtn("😊 Отметить настроение", CbMenuMood),
+		},
 	)
+	return kbFromRows(rows...)
 }
 
 func kbMood() *maxbot.Keyboard {

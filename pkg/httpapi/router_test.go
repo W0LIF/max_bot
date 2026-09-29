@@ -173,6 +173,28 @@ func TestRouter_Me_ExistingUser(t *testing.T) {
 	}
 }
 
+func TestRouter_ConsentAndReminders(t *testing.T) {
+	router, initData, store := newTestRouter(t)
+	_ = do(router, http.MethodGet, "/api/me", initData, "")
+
+	rec := do(router, http.MethodPost, "/api/consent", initData, `{"value":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/consent: ожидали 200, получили %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rec = do(router, http.MethodPost, "/api/me/reminders", initData, `{"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/me/reminders: ожидали 200, получили %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	user, err := store.GetUser(t.Context(), 42)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if !user.Consent || !user.RemindersOn {
+		t.Fatalf("ожидали consent и reminders_on true, получили %+v", user)
+	}
+}
+
 func TestRouter_Me_AutoGroup(t *testing.T) {
 	router, initData, store := newTestRouter(t)
 

@@ -40,9 +40,10 @@ type Task struct {
 }
 
 var (
-	ErrTaskNotFound      = errors.New("storage: задача не найдена")
-	ErrInvalidStatus     = errors.New("storage: недопустимый статус")
-	ErrInvalidTransition = errors.New("storage: недопустимый переход статуса")
+	ErrTaskNotFound        = errors.New("storage: задача не найдена")
+	ErrInvalidStatus       = errors.New("storage: недопустимый статус")
+	ErrInvalidTransition   = errors.New("storage: недопустимый переход статуса")
+	ErrReminderAlreadySent = errors.New("storage: напоминание уже отправлено")
 )
 
 func (t *Task) CanTransitionTo(next TaskStatus) error {

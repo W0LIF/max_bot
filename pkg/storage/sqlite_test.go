@@ -35,6 +35,30 @@ func TestSQLiteStore_Groups(t *testing.T) {
 	runGroupStoreTests(t, s)
 }
 
+func TestNewConfiguredStore_UsesLocalSQLiteWithoutTurso(t *testing.T) {
+	t.Setenv("TURSO_DATABASE_URL", "")
+	t.Setenv("TURSO_AUTH_TOKEN", "")
+
+	store, err := NewConfiguredStore(":memory:")
+	if err != nil {
+		t.Fatalf("NewConfiguredStore: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.SaveUser(context.Background(), &User{ID: 1, Name: "Локальный пользователь"}); err != nil {
+		t.Fatalf("SaveUser: %v", err)
+	}
+}
+
+func TestNewConfiguredStore_RequiresTursoToken(t *testing.T) {
+	t.Setenv("TURSO_DATABASE_URL", "libsql://example.turso.io")
+	t.Setenv("TURSO_AUTH_TOKEN", "")
+
+	if _, err := NewConfiguredStore(":memory:"); err == nil {
+		t.Fatal("ожидали ошибку без TURSO_AUTH_TOKEN")
+	}
+}
+
 func TestSQLiteStore_MigrateExistingDB(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/old.db"
